@@ -10,9 +10,6 @@ import authRoutes from './routes/auth.js';
 import nftRoutes from './routes/nft.js';
 import telegramRoutes from './routes/telegram.js';
 
-// Import bot (but don't start polling if not in Telegram environment)
-import './bot/bot.js';
-
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
