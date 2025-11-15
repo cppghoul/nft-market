@@ -1,50 +1,92 @@
 import express from 'express';
 import cors from 'cors';
-import mongoose from 'mongoose';
+import { Pool } from 'pg';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 const app = express();
 
+// PostgreSQL connection
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
+
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static('frontend'));
 
-// Simple User model
-const userSchema = new mongoose.Schema({
-  telegramId: { type: Number, required: true, unique: true },
-  phone: { type: String },
-  firstName: { type: String, required: true },
-  lastName: { type: String },
-  username: { type: String },
-  isVerified: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now }
-});
+// Create tables if they don't exist
+async function initializeDatabase() {
+  try {
+    // Create users table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        telegram_id BIGINT UNIQUE NOT NULL,
+        phone VARCHAR(20),
+        first_name VARCHAR(100) NOT NULL,
+        last_name VARCHAR(100),
+        username VARCHAR(50),
+        is_verified BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-const User = mongoose.model('User', userSchema);
+    // Create nfts table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS nfts (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        description TEXT,
+        image_url TEXT NOT NULL,
+        price DECIMAL(10,2) NOT NULL,
+        category VARCHAR(50) NOT NULL,
+        is_available BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-// Simple NFT model
-const nftSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  description: { type: String },
-  imageUrl: { type: String, required: true },
-  price: { type: Number, required: true },
-  category: { type: String, required: true },
-  isAvailable: { type: Boolean, default: true },
-  createdAt: { type: Date, default: Date.now }
-});
+    // Insert sample NFTs if table is empty
+    const nftCount = await pool.query('SELECT COUNT(*) FROM nfts');
+    if (parseInt(nftCount.rows[0].count) === 0) {
+      await pool.query(`
+        INSERT INTO nfts (name, description, image_url, price, category) VALUES
+        ('Golden Star', 'Блестящая золотая звезда', 'https://via.placeholder.com/300x300/FFD700/000000?text=⭐', 0.99, 'stickers'),
+        ('Heart Gift', 'Подарок в виде сердца', 'https://via.placeholder.com/300x300/FF69B4/FFFFFF?text=💝', 1.49, 'stickers'),
+        ('Diamond Premium', 'Роскошный бриллиант', 'https://via.placeholder.com/300x300/B9F2FF/000000?text=💎', 2.99, 'premium'),
+        ('Celebration Cake', 'Торт для праздников', 'https://via.placeholder.com/300x300/FF6B6B/FFFFFF?text=🎂', 1.99, 'emojis'),
+        ('Magic Wand', 'Волшебная палочка', 'https://via.placeholder.com/300x300/9B59B6/FFFFFF?text=✨', 1.79, 'animations')
+      `);
+      console.log('✅ Sample NFTs created');
+    }
 
-const NFT = mongoose.model('NFT', nftSchema);
+    console.log('✅ Database initialized successfully');
+  } catch (error) {
+    console.error('❌ Database initialization error:', error);
+  }
+}
 
 // Routes
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    message: 'NFT Marketplace is running!',
-    timestamp: new Date().toISOString()
-  });
+app.get('/health', async (req, res) => {
+  try {
+    // Test database connection
+    await pool.query('SELECT 1');
+    res.json({ 
+      status: 'OK', 
+      message: 'NFT Marketplace is running!',
+      timestamp: new Date().toISOString(),
+      database: 'PostgreSQL ✅'
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      status: 'ERROR', 
+      error: 'Database connection failed',
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 app.get('/', (req, res) => {
@@ -58,48 +100,22 @@ app.get('/marketplace', (req, res) => {
 // API Routes
 app.get('/api/nft', async (req, res) => {
   try {
-    const nfts = await NFT.find({ isAvailable: true });
-    res.json({ success: true, nfts });
+    const { category } = req.query;
+    
+    let query = 'SELECT * FROM nfts WHERE is_available = true';
+    let params = [];
+    
+    if (category && category !== 'all') {
+      query += ' AND category = $1';
+      params.push(category);
+    }
+    
+    query += ' ORDER BY created_at DESC';
+    
+    const result = await pool.query(query, params);
+    res.json({ success: true, nfts: result.rows });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/nft/create-sample', async (req, res) => {
-  try {
-    const sampleNFTs = [
-      {
-        name: "Golden Star",
-        description: "Блестящая золотая звезда",
-        imageUrl: "https://via.placeholder.com/300x300/FFD700/000000?text=⭐",
-        price: 0.99,
-        category: "stickers"
-      },
-      {
-        name: "Heart Gift",
-        description: "Подарок в виде сердца",
-        imageUrl: "https://via.placeholder.com/300x300/FF69B4/FFFFFF?text=💝",
-        price: 1.49,
-        category: "stickers"
-      },
-      {
-        name: "Diamond Premium",
-        description: "Роскошный бриллиант",
-        imageUrl: "https://via.placeholder.com/300x300/B9F2FF/000000?text=💎",
-        price: 2.99,
-        category: "premium"
-      }
-    ];
-
-    await NFT.deleteMany({});
-    const createdNFTs = await NFT.insertMany(sampleNFTs);
-
-    res.json({ 
-      success: true, 
-      message: 'Sample NFTs created',
-      nfts: createdNFTs 
-    });
-  } catch (error) {
+    console.error('NFT fetch error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -109,73 +125,87 @@ app.post('/api/telegram/verify-auth', async (req, res) => {
   try {
     const { initData } = req.body;
     
-    // Simple validation - in production use proper Telegram validation
     if (!initData) {
       return res.status(400).json({ success: false, error: 'No init data' });
     }
 
-    // Mock user data for testing
+    // For demo - in production use real Telegram validation
     const userData = { 
       id: Math.floor(Math.random() * 1000000), 
       first_name: 'Telegram',
-      last_name: 'User',
+      last_name: 'User', 
       username: 'telegram_user'
     };
     
-    let user = await User.findOne({ telegramId: userData.id });
-    if (!user) {
-      user = new User({
-        telegramId: userData.id,
-        firstName: userData.first_name,
-        lastName: userData.last_name,
-        username: userData.username,
-        isVerified: true
-      });
-      await user.save();
+    // Check if user exists
+    let userResult = await pool.query(
+      'SELECT * FROM users WHERE telegram_id = $1',
+      [userData.id]
+    );
+
+    let user;
+    if (userResult.rows.length === 0) {
+      // Create new user
+      const newUser = await pool.query(
+        `INSERT INTO users (telegram_id, first_name, last_name, username, is_verified) 
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [userData.id, userData.first_name, userData.last_name, userData.username, true]
+      );
+      user = newUser.rows[0];
+    } else {
+      user = userResult.rows[0];
     }
 
     res.json({
       success: true,
       user: {
-        id: user.telegramId,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        id: user.telegram_id,
+        firstName: user.first_name,
+        lastName: user.last_name,
         username: user.username,
-        isVerified: user.isVerified
+        isVerified: user.is_verified
       }
     });
     
+  } catch (error) {
+    console.error('Auth error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Create sample NFTs endpoint
+app.post('/api/nft/create-sample', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM nfts'); // Clear existing
+    
+    await pool.query(`
+      INSERT INTO nfts (name, description, image_url, price, category) VALUES
+      ('Golden Star', 'Блестящая золотая звезда', 'https://via.placeholder.com/300x300/FFD700/000000?text=⭐', 0.99, 'stickers'),
+      ('Heart Gift', 'Подарок в виде сердца', 'https://via.placeholder.com/300x300/FF69B4/FFFFFF?text=💝', 1.49, 'stickers'),
+      ('Diamond Premium', 'Роскошный бриллиант', 'https://via.placeholder.com/300x300/B9F2FF/000000?text=💎', 2.99, 'premium')
+    `);
+    
+    res.json({ success: true, message: 'Sample NFTs created' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Connect to MongoDB and start server
+// Connect to database and start server
 async function startServer() {
   try {
-    console.log('🔄 Connecting to MongoDB...');
-    await mongoose.connect(process.env.MONGODB_URI);
-    console.log('✅ MongoDB connected successfully');
-    
-    // Create sample NFTs if none exist
-    const nftCount = await NFT.countDocuments();
-    if (nftCount === 0) {
-      await NFT.create({
-        name: "Welcome NFT",
-        description: "Your first NFT gift",
-        imageUrl: "https://via.placeholder.com/300x300/667eea/ffffff?text=WELCOME",
-        price: 0.99,
-        category: "premium"
-      });
-      console.log('✅ Sample NFT created');
-    }
+    console.log('🔄 Initializing database...');
+    await initializeDatabase();
     
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📱 Health check: http://localhost:${PORT}/health`);
-      console.log(`🏠 Main page: http://localhost:${PORT}/`);
-      console.log(`🛍️ Marketplace: http://localhost:${PORT}/marketplace`);
+      console.log(`📱 Environment: ${process.env.NODE_ENV}`);
+      console.log(`🎮 Health check: http://localhost:${PORT}/health`);
+      
+      if (process.env.TELEGRAM_BOT_USERNAME) {
+        console.log(`🤖 Bot: https://t.me/${process.env.TELEGRAM_BOT_USERNAME}`);
+      }
     });
     
   } catch (error) {
