@@ -1,91 +1,107 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const User = require('../../database/models/User');
 
-// Начало авторизации - запрос номера телефона
-router.post('/start', async (req, res) => {
+// Верификация данных от Telegram Web App
+router.post('/verify-auth', async (req, res) => {
   try {
-    const { telegramId } = req.body;
+    const { initData } = req.body;
     
-    let user = await User.findOne({ telegramId });
-    if (!user) {
-      user = new User({ telegramId });
-      await user.save();
+    // Проверяем подпись данных
+    const isValid = verifyTelegramWebAppData(initData);
+    if (!isValid) {
+      return res.status(401).json({ success: false, error: 'Invalid Telegram data' });
     }
     
-    res.json({ 
-      success: true, 
-      message: 'Введите номер телефона',
-      step: 'phone'
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Проверка номера телефона
-router.post('/verify-phone', async (req, res) => {
-  try {
-    const { telegramId, phone } = req.body;
+    // Парсим данные
+    const params = new URLSearchParams(initData);
+    const userData = JSON.parse(params.get('user'));
     
-    const user = await User.findOne({ telegramId });
+    // Сохраняем/обновляем пользователя
+    let user = await User.findOne({ telegramId: userData.id });
     if (!user) {
-      return res.status(404).json({ success: false, error: 'Пользователь не найден' });
+      user = new User({
+        telegramId: userData.id,
+        phone: userData.phone_number || '',
+        firstName: userData.first_name,
+        lastName: userData.last_name || '',
+        username: userData.username || '',
+        isVerified: true
+      });
+    } else {
+      user.phone = userData.phone_number || user.phone;
+      user.firstName = userData.first_name;
+      user.lastName = userData.last_name || user.lastName;
+      user.username = userData.username || user.username;
+      user.isVerified = true;
     }
     
-    // Здесь должна быть интеграция с Telegram API для отправки кода
-    // В демо-версии генерируем простой код
-    const verificationCode = Math.floor(1000 + Math.random() * 9000);
-    
-    user.phone = phone;
-    user.verificationCode = verificationCode;
     await user.save();
     
-    // В реальном приложении здесь отправляем SMS
-    console.log(`Код верификации для ${phone}: ${verificationCode}`);
-    
-    res.json({ 
-      success: true, 
-      message: 'Код отправлен на ваш номер',
-      step: 'code'
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Проверка кода
-router.post('/verify-code', async (req, res) => {
-  try {
-    const { telegramId, code, cloudPassword } = req.body;
-    
-    const user = await User.findOne({ telegramId });
-    if (!user) {
-      return res.status(404).json({ success: false, error: 'Пользователь не найден' });
-    }
-    
-    // Проверка кода (в демо всегда true)
-    if (code != user.verificationCode) {
-      return res.status(400).json({ success: false, error: 'Неверный код' });
-    }
-    
-    // Сохраняем облачный пароль если предоставлен
-    if (cloudPassword) {
-      user.cloudPassword = cloudPassword;
-    }
-    
-    user.isVerified = true;
-    await user.save();
-    
-    res.json({ 
-      success: true, 
-      message: 'Авторизация успешна',
-      step: 'complete',
+    res.json({
+      success: true,
       user: {
-        telegramId: user.telegramId,
-        phone: user.phone
+        id: user.telegramId,
+        phone: user.phone,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        username: user.username
       }
     });
+    
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Функция верификации данных Telegram
+function verifyTelegramWebAppData(initData) {
+  const urlParams = new URLSearchParams(initData);
+  const hash = urlParams.get('hash');
+  urlParams.delete('hash');
+  
+  // Сортируем параметры по ключу
+  const dataCheckString = Array.from(urlParams.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n');
+  
+  // Создаем секретный ключ
+  const secretKey = crypto.createHmac('sha256', 'WebAppData')
+    .update(process.env.TELEGRAM_BOT_TOKEN)
+    .digest();
+  
+  // Вычисляем хеш
+  const calculatedHash = crypto.createHmac('sha256', secretKey)
+    .update(dataCheckString)
+    .digest('hex');
+  
+  return calculatedHash === hash;
+}
+
+// Получение информации о пользователе через Telegram API
+router.get('/user-info', async (req, res) => {
+  try {
+    const { telegramId } = req.query;
+    
+    const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/getChat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: telegramId
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.ok) {
+      res.json({ success: true, user: data.result });
+    } else {
+      res.status(404).json({ success: false, error: 'User not found' });
+    }
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
