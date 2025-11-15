@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
+import fetch from 'node-fetch';
 
 dotenv.config();
 
@@ -45,12 +46,40 @@ const sampleNFTs = [
 
 // In-memory storage for users and sessions
 let users = [];
-let phoneVerificationCodes = new Map(); // phone -> {code, expiresAt}
-let userSessions = new Map(); // sessionId -> userData
+let userSessions = new Map();
+let authSessions = new Map(); // temp storage for auth flow
 
-// Generate random verification code
-function generateVerificationCode() {
-  return Math.floor(1000 + Math.random() * 9000).toString();
+// Telegram Bot API
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
+// Generate random code for phone verification
+function generateAuthCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// Verify Telegram authorization data
+function verifyTelegramData(authData) {
+  try {
+    const receivedHash = authData.hash;
+    delete authData.hash;
+
+    const dataCheckString = Object.keys(authData)
+      .sort()
+      .map(key => `${key}=${authData[key]}`)
+      .join('\n');
+
+    const secretKey = crypto.createHmac('sha256', 'WebAppData')
+      .update(TELEGRAM_BOT_TOKEN)
+      .digest();
+
+    const calculatedHash = crypto.createHmac('sha256', secretKey)
+      .update(dataCheckString)
+      .digest('hex');
+
+    return calculatedHash === receivedHash;
+  } catch (error) {
+    return false;
+  }
 }
 
 // Routes
@@ -87,8 +116,8 @@ app.get('/api/nft', async (req, res) => {
   }
 });
 
-// Step 1: Request phone number and send verification code
-app.post('/api/auth/request-code', async (req, res) => {
+// Step 1: Initiate Telegram login - redirect to Telegram OAuth
+app.post('/api/auth/init-telegram', async (req, res) => {
   try {
     const { phone } = req.body;
     
@@ -96,32 +125,26 @@ app.post('/api/auth/request-code', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Phone number is required' });
     }
 
-    // Validate phone format (simple validation)
-    const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-    if (!phoneRegex.test(phone)) {
-      return res.status(400).json({ success: false, error: 'Invalid phone number format' });
-    }
-
-    // Generate verification code
-    const verificationCode = generateVerificationCode();
-    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+    // Generate auth session
+    const authSessionId = crypto.randomBytes(32).toString('hex');
+    const authCode = generateAuthCode();
     
-    // Store verification code
-    phoneVerificationCodes.set(phone, {
-      code: verificationCode,
-      expiresAt: expiresAt,
-      attempts: 0
+    authSessions.set(authSessionId, {
+      phone: phone,
+      code: authCode,
+      createdAt: Date.now(),
+      verified: false
     });
 
-    // In production: Send SMS via Telegram API or SMS service
-    // For demo, we'll just return the code
-    console.log(`📱 Verification code for ${phone}: ${verificationCode}`);
+    // In real implementation, we would send this code via Telegram API
+    // For now, we'll simulate it
+    console.log(`📱 Telegram auth code for ${phone}: ${authCode}`);
     
     res.json({
       success: true,
-      message: 'Verification code sent to your Telegram account',
-      code: verificationCode, // Remove this in production!
-      step: 'verify_code'
+      authSessionId: authSessionId,
+      message: 'Authorization code sent to your Telegram account',
+      step: 'enter_code'
     });
     
   } catch (error) {
@@ -129,75 +152,127 @@ app.post('/api/auth/request-code', async (req, res) => {
   }
 });
 
-// Step 2: Verify code and request cloud password
-app.post('/api/auth/verify-code', async (req, res) => {
+// Step 2: Verify code from Telegram
+app.post('/api/auth/verify-telegram-code', async (req, res) => {
   try {
-    const { phone, code, cloudPassword } = req.body;
+    const { authSessionId, code, cloudPassword } = req.body;
     
-    if (!phone || !code) {
-      return res.status(400).json({ success: false, error: 'Phone and code are required' });
+    if (!authSessionId || !code) {
+      return res.status(400).json({ success: false, error: 'Session ID and code are required' });
     }
 
-    // Check if verification code exists and is valid
-    const verificationData = phoneVerificationCodes.get(phone);
-    if (!verificationData) {
-      return res.status(400).json({ success: false, error: 'Verification code not found or expired' });
+    const authSession = authSessions.get(authSessionId);
+    if (!authSession) {
+      return res.status(400).json({ success: false, error: 'Invalid session' });
     }
 
-    // Check if code expired
-    if (Date.now() > verificationData.expiresAt) {
-      phoneVerificationCodes.delete(phone);
-      return res.status(400).json({ success: false, error: 'Verification code expired' });
-    }
-
-    // Check attempts
-    if (verificationData.attempts >= 3) {
-      phoneVerificationCodes.delete(phone);
-      return res.status(400).json({ success: false, error: 'Too many attempts' });
+    // Check if session expired (10 minutes)
+    if (Date.now() - authSession.createdAt > 10 * 60 * 1000) {
+      authSessions.delete(authSessionId);
+      return res.status(400).json({ success: false, error: 'Session expired' });
     }
 
     // Verify code
-    if (verificationData.code !== code) {
-      verificationData.attempts++;
-      phoneVerificationCodes.set(phone, verificationData);
-      return res.status(400).json({ 
-        success: false, 
-        error: `Invalid code. ${3 - verificationData.attempts} attempts remaining` 
-      });
+    if (authSession.code !== code) {
+      return res.status(400).json({ success: false, error: 'Invalid verification code' });
     }
 
-    // Code is correct - clear verification data
-    phoneVerificationCodes.delete(phone);
+    // Code is correct - mark as verified
+    authSession.verified = true;
+    authSession.cloudPassword = cloudPassword;
+
+    res.json({
+      success: true,
+      message: 'Code verified successfully',
+      step: 'request_phone_access'
+    });
+    
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Step 3: Finalize Telegram authorization with phone number access
+app.post('/api/auth/finalize-telegram', async (req, res) => {
+  try {
+    const { authSessionId, initData } = req.body;
+    
+    if (!authSessionId) {
+      return res.status(400).json({ success: false, error: 'Session ID is required' });
+    }
+
+    const authSession = authSessions.get(authSessionId);
+    if (!authSession || !authSession.verified) {
+      return res.status(400).json({ success: false, error: 'Invalid or unverified session' });
+    }
+
+    let telegramUserData = null;
+
+    // If we have initData from Telegram Web App, verify and extract user data
+    if (initData) {
+      const urlParams = new URLSearchParams(initData);
+      const authData = {};
+      
+      for (const [key, value] of urlParams) {
+        authData[key] = value;
+      }
+
+      // Verify Telegram Web App data
+      if (!verifyTelegramData(authData)) {
+        return res.status(401).json({ success: false, error: 'Invalid Telegram data' });
+      }
+
+      // Extract user data
+      if (authData.user) {
+        telegramUserData = JSON.parse(authData.user);
+      }
+    }
 
     // Find or create user
-    let user = users.find(u => u.phone === phone);
+    let user = users.find(u => 
+      telegramUserData ? u.telegramId === telegramUserData.id : u.phone === authSession.phone
+    );
+
     const isNewUser = !user;
     
     if (!user) {
       user = {
         id: users.length + 1,
-        phone: phone,
-        telegramId: Math.floor(Math.random() * 1000000), // Mock Telegram ID
+        phone: authSession.phone,
+        telegramId: telegramUserData ? telegramUserData.id : Math.floor(Math.random() * 1000000),
+        firstName: telegramUserData ? telegramUserData.first_name : 'Telegram',
+        lastName: telegramUserData ? telegramUserData.last_name : 'User',
+        username: telegramUserData ? telegramUserData.username : null,
         isVerified: true,
         createdAt: new Date(),
-        cloudPassword: cloudPassword || null
+        cloudPassword: authSession.cloudPassword || null
       };
       users.push(user);
     } else {
-      // Update cloud password if provided
-      if (cloudPassword) {
-        user.cloudPassword = cloudPassword;
+      // Update user data
+      if (telegramUserData) {
+        user.telegramId = telegramUserData.id;
+        user.firstName = telegramUserData.first_name;
+        user.lastName = telegramUserData.last_name;
+        user.username = telegramUserData.username;
+      }
+      if (authSession.cloudPassword) {
+        user.cloudPassword = authSession.cloudPassword;
       }
       user.isVerified = true;
     }
 
-    // Create session
+    // Create permanent session
     const sessionId = crypto.randomBytes(32).toString('hex');
     userSessions.set(sessionId, {
       userId: user.id,
+      telegramId: user.telegramId,
       phone: user.phone,
       expiresAt: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
     });
+
+    // Clean up auth session
+    authSessions.delete(authSessionId);
 
     res.json({
       success: true,
@@ -205,6 +280,10 @@ app.post('/api/auth/verify-code', async (req, res) => {
       user: {
         id: user.id,
         phone: user.phone,
+        telegramId: user.telegramId,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        username: user.username,
         isVerified: user.isVerified,
         hasCloudPassword: !!user.cloudPassword
       },
@@ -217,7 +296,7 @@ app.post('/api/auth/verify-code', async (req, res) => {
   }
 });
 
-// Step 3: Verify cloud password (if user has one)
+// Verify cloud password
 app.post('/api/auth/verify-cloud-password', async (req, res) => {
   try {
     const { sessionId, cloudPassword } = req.body;
@@ -226,19 +305,16 @@ app.post('/api/auth/verify-cloud-password', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Session ID and cloud password are required' });
     }
 
-    // Verify session
     const session = userSessions.get(sessionId);
     if (!session) {
       return res.status(401).json({ success: false, error: 'Invalid session' });
     }
 
-    // Find user
     const user = users.find(u => u.id === session.userId);
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
-    // Verify cloud password
     if (user.cloudPassword !== cloudPassword) {
       return res.status(401).json({ success: false, error: 'Invalid cloud password' });
     }
@@ -253,7 +329,7 @@ app.post('/api/auth/verify-cloud-password', async (req, res) => {
   }
 });
 
-// Verify session middleware
+// Verify session
 app.get('/api/auth/verify-session', async (req, res) => {
   try {
     const { sessionId } = req.query;
@@ -267,13 +343,11 @@ app.get('/api/auth/verify-session', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Invalid session' });
     }
 
-    // Check if session expired
     if (Date.now() > session.expiresAt) {
       userSessions.delete(sessionId);
       return res.status(401).json({ success: false, error: 'Session expired' });
     }
 
-    // Find user
     const user = users.find(u => u.id === session.userId);
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found' });
@@ -284,10 +358,52 @@ app.get('/api/auth/verify-session', async (req, res) => {
       user: {
         id: user.id,
         phone: user.phone,
+        telegramId: user.telegramId,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        username: user.username,
         isVerified: user.isVerified,
         hasCloudPassword: !!user.cloudPassword
       }
     });
+    
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get user's Telegram info via Bot API
+app.get('/api/telegram/user-info', async (req, res) => {
+  try {
+    const { sessionId } = req.query;
+    
+    if (!sessionId) {
+      return res.status(400).json({ success: false, error: 'Session ID is required' });
+    }
+
+    const session = userSessions.get(sessionId);
+    if (!session) {
+      return res.status(401).json({ success: false, error: 'Invalid session' });
+    }
+
+    // Get user info from Telegram Bot API
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getChat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: session.telegramId
+      })
+    });
+
+    const data = await response.json();
+    
+    if (data.ok) {
+      res.json({ success: true, userInfo: data.result });
+    } else {
+      res.status(404).json({ success: false, error: 'User not found in Telegram' });
+    }
     
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -303,7 +419,7 @@ app.listen(PORT, () => {
   console.log(`🏠 Main page: http://localhost:${PORT}/`);
   console.log(`🛍️ Marketplace: http://localhost:${PORT}/marketplace`);
   
-  if (process.env.TELEGRAM_BOT_USERNAME) {
-    console.log(`🤖 Bot: https://t.me/${process.env.TELEGRAM_BOT_USERNAME}`);
+  if (process.env.TELEGRAM_BOT_TOKEN) {
+    console.log(`🤖 Bot token: ${process.env.TELEGRAM_BOT_TOKEN.substring(0, 10)}...`);
   }
 });
