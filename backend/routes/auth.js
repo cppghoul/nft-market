@@ -1,110 +1,89 @@
-const express = require('express');
-const router = express.Router();
-const crypto = require('crypto');
-const User = require('../../database/models/User');
+import express from 'express';
+import jwt from 'jsonwebtoken';
+import User from '../../database/models/User.js';
 
-// Верификация данных от Telegram Web App
-router.post('/verify-auth', async (req, res) => {
+const router = express.Router();
+
+// Generate JWT token
+const generateToken = (userId) => {
+  return jwt.sign({ userId }, process.env.JWT_SECRET || 'fallback-secret', {
+    expiresIn: '7d'
+  });
+};
+
+// Verify token middleware
+export const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ success: false, error: 'Access token required' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret', (err, user) => {
+    if (err) {
+      return res.status(403).json({ success: false, error: 'Invalid token' });
+    }
+    req.user = user;
+    next();
+  });
+};
+
+// Get user profile
+router.get('/profile', authenticateToken, async (req, res) => {
   try {
-    const { initData } = req.body;
-    
-    // Проверяем подпись данных
-    const isValid = verifyTelegramWebAppData(initData);
-    if (!isValid) {
-      return res.status(401).json({ success: false, error: 'Invalid Telegram data' });
-    }
-    
-    // Парсим данные
-    const params = new URLSearchParams(initData);
-    const userData = JSON.parse(params.get('user'));
-    
-    // Сохраняем/обновляем пользователя
-    let user = await User.findOne({ telegramId: userData.id });
+    const user = await User.findById(req.user.userId);
     if (!user) {
-      user = new User({
-        telegramId: userData.id,
-        phone: userData.phone_number || '',
-        firstName: userData.first_name,
-        lastName: userData.last_name || '',
-        username: userData.username || '',
-        isVerified: true
-      });
-    } else {
-      user.phone = userData.phone_number || user.phone;
-      user.firstName = userData.first_name;
-      user.lastName = userData.last_name || user.lastName;
-      user.username = userData.username || user.username;
-      user.isVerified = true;
+      return res.status(404).json({ success: false, error: 'User not found' });
     }
-    
-    await user.save();
-    
+
     res.json({
       success: true,
       user: {
         id: user.telegramId,
-        phone: user.phone,
         firstName: user.firstName,
         lastName: user.lastName,
-        username: user.username
+        username: user.username,
+        phone: user.phone,
+        isVerified: user.isVerified
       }
     });
-    
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Функция верификации данных Telegram
-function verifyTelegramWebAppData(initData) {
-  const urlParams = new URLSearchParams(initData);
-  const hash = urlParams.get('hash');
-  urlParams.delete('hash');
-  
-  // Сортируем параметры по ключу
-  const dataCheckString = Array.from(urlParams.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${key}=${value}`)
-    .join('\n');
-  
-  // Создаем секретный ключ
-  const secretKey = crypto.createHmac('sha256', 'WebAppData')
-    .update(process.env.TELEGRAM_BOT_TOKEN)
-    .digest();
-  
-  // Вычисляем хеш
-  const calculatedHash = crypto.createHmac('sha256', secretKey)
-    .update(dataCheckString)
-    .digest('hex');
-  
-  return calculatedHash === hash;
-}
-
-// Получение информации о пользователе через Telegram API
-router.get('/user-info', async (req, res) => {
+// Update user profile
+router.put('/profile', authenticateToken, async (req, res) => {
   try {
-    const { telegramId } = req.query;
-    
-    const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/getChat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        chat_id: telegramId
-      })
-    });
-    
-    const data = await response.json();
-    
-    if (data.ok) {
-      res.json({ success: true, user: data.result });
-    } else {
-      res.status(404).json({ success: false, error: 'User not found' });
+    const { cloudPassword } = req.body;
+    const user = await User.findById(req.user.userId);
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
     }
+
+    if (cloudPassword) {
+      user.cloudPassword = cloudPassword;
+    }
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully'
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-module.exports = router;
+// Logout (client-side token removal)
+router.post('/logout', authenticateToken, (req, res) => {
+  res.json({
+    success: true,
+    message: 'Logged out successfully'
+  });
+});
+
+export default router;
