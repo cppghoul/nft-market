@@ -1,98 +1,170 @@
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import dotenv from 'dotenv';
 
-// Import routes
-import authRoutes from './routes/auth.js';
-import nftRoutes from './routes/nft.js';
-import telegramRoutes from './routes/telegram.js';
-
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(join(__dirname, '../frontend')));
+app.use(express.static('frontend'));
+
+// Simple User model
+const userSchema = new mongoose.Schema({
+  telegramId: { type: Number, required: true, unique: true },
+  phone: { type: String },
+  firstName: { type: String, required: true },
+  lastName: { type: String },
+  username: { type: String },
+  isVerified: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const User = mongoose.model('User', userSchema);
+
+// Simple NFT model
+const nftSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  description: { type: String },
+  imageUrl: { type: String, required: true },
+  price: { type: Number, required: true },
+  category: { type: String, required: true },
+  isAvailable: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const NFT = mongoose.model('NFT', nftSchema);
 
 // Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/nft', nftRoutes);
-app.use('/api/telegram', telegramRoutes);
-
-// Serve frontend pages
-app.get('/', (req, res) => {
-  res.sendFile(join(__dirname, '../frontend/index.html'));
-});
-
-app.get('/marketplace', (req, res) => {
-  res.sendFile(join(__dirname, '../frontend/marketplace.html'));
-});
-
-// Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV 
+    message: 'NFT Marketplace is running!',
+    timestamp: new Date().toISOString()
   });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ 
-    success: false, 
-    error: 'Route not found' 
-  });
+app.get('/', (req, res) => {
+  res.sendFile('frontend/index.html', { root: '.' });
 });
 
-// Error handling middleware
-app.use((error, req, res, next) => {
-  console.error('Server Error:', error);
-  res.status(500).json({ 
-    success: false, 
-    error: process.env.NODE_ENV === 'production' 
-      ? 'Internal server error' 
-      : error.message 
-  });
+app.get('/marketplace', (req, res) => {
+  res.sendFile('frontend/marketplace.html', { root: '.' });
 });
 
-// Database connection
-const connectDB = async () => {
+// API Routes
+app.get('/api/nft', async (req, res) => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-    console.log('✅ MongoDB connected successfully');
+    const nfts = await NFT.find({ isAvailable: true });
+    res.json({ success: true, nfts });
   } catch (error) {
-    console.error('❌ MongoDB connection error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/nft/create-sample', async (req, res) => {
+  try {
+    const sampleNFTs = [
+      {
+        name: "Golden Star",
+        description: "Блестящая золотая звезда",
+        imageUrl: "https://via.placeholder.com/300x300/FFD700/000000?text=⭐",
+        price: 0.99,
+        category: "stickers"
+      },
+      {
+        name: "Heart Gift",
+        description: "Подарок в виде сердца",
+        imageUrl: "https://via.placeholder.com/300x300/FF69B4/FFFFFF?text=💝",
+        price: 1.49,
+        category: "stickers"
+      }
+    ];
+
+    await NFT.deleteMany({});
+    const createdNFTs = await NFT.insertMany(sampleNFTs);
+
+    res.json({ 
+      success: true, 
+      message: 'Sample NFTs created',
+      nfts: createdNFTs 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Telegram auth verification
+app.post('/api/telegram/verify-auth', async (req, res) => {
+  try {
+    const { initData } = req.body;
+    
+    // Simple validation - in production use proper Telegram validation
+    if (!initData) {
+      return res.status(400).json({ success: false, error: 'No init data' });
+    }
+
+    // Parse user data (simplified)
+    const userData = { id: Date.now(), first_name: 'Test User' }; // Mock data
+    
+    let user = await User.findOne({ telegramId: userData.id });
+    if (!user) {
+      user = new User({
+        telegramId: userData.id,
+        firstName: userData.first_name,
+        isVerified: true
+      });
+      await user.save();
+    }
+
+    res.json({
+      success: true,
+      user: {
+        id: user.telegramId,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        username: user.username,
+        isVerified: user.isVerified
+      }
+    });
+    
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Connect to MongoDB and start server
+async function startServer() {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('✅ MongoDB connected successfully');
+    
+    // Create sample NFTs if none exist
+    const nftCount = await NFT.countDocuments();
+    if (nftCount === 0) {
+      await NFT.create({
+        name: "Welcome NFT",
+        description: "Your first NFT gift",
+        imageUrl: "https://via.placeholder.com/300x300/667eea/ffffff?text=NFT",
+        price: 0.99,
+        category: "premium"
+      });
+      console.log('✅ Sample NFT created');
+    }
+    
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📱 Health check: http://localhost:${PORT}/health`);
+    });
+    
+  } catch (error) {
+    console.error('❌ Server startup error:', error);
     process.exit(1);
   }
-};
+}
 
-// Start server
-const startServer = async () => {
-  await connectDB();
-  
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📱 Environment: ${process.env.NODE_ENV}`);
-    console.log(`🎮 Health check: http://localhost:${PORT}/health`);
-    
-    if (process.env.TELEGRAM_BOT_USERNAME) {
-      console.log(`🤖 Bot: https://t.me/${process.env.TELEGRAM_BOT_USERNAME}`);
-    }
-  });
-};
-
-startServer().catch(console.error);
+startServer();
