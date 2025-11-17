@@ -1,9 +1,11 @@
-[build]
-builder = "NIXPACKS"
+[phases.setup]
+cmds = ["apt-get update", "apt-get install -y chromium"]
 
-[deploy]
-startCommand = "npm start"
+[phases.install]
+cmds = ["npm install"]
 
-[[services]]
-name = "web"
-port = 3000
+[start]
+cmd = "npm start"
+
+[build.args]
+NODE_ENV = "production"
