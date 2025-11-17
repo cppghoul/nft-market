@@ -1,0 +1,9 @@
+[build]
+builder = "DOCKERFILE"
+
+[deploy]
+startCommand = "npm start"
+
+[[services]]
+name = "web"
+port = 3000
