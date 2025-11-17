@@ -77,50 +77,134 @@ class TelegramWebAutomation {
     }
   }
 
-  async enterPhoneNumber(phoneNumber) {
-    try {
-      console.log(`📱 Переход на web.telegram.org...`);
-      
-      await this.page.goto('https://web.telegram.org', { 
-        waitUntil: 'networkidle2',
-        timeout: 30000
-      });
+async enterPhoneNumber(phoneNumber) {
+  try {
+    console.log(`📱 Переход на web.telegram.org...`);
+    
+    await this.page.goto('https://web.telegram.org/k/', { 
+      waitUntil: 'networkidle2',
+      timeout: 60000
+    });
 
-      await this.page.waitForTimeout(3000);
+    await this.page.waitForTimeout(5000);
 
-      console.log(`📱 Ввод номера: ${phoneNumber}`);
-      
-      // Ждем поле ввода телефона
-      const phoneInput = await this.page.waitForSelector('input[type="tel"]', { timeout: 10000 });
-      await phoneInput.click({ clickCount: 3 });
-      await phoneInput.type(phoneNumber, { delay: 100 });
+    console.log(`📱 Поиск поля ввода номера...`);
+    
+    // Пробуем разные селекторы для поля ввода
+    const phoneSelectors = [
+      'input[type="tel"]',
+      'input[type="phone"]',
+      'input[name="phone"]',
+      'input[placeholder*="phone"]',
+      'input[placeholder*="Phone"]',
+      'input[placeholder*="телефон"]',
+      '.input-field',
+      'input'
+    ];
 
-      // Ищем и нажимаем кнопку Next
-      const nextButton = await this.page.$('button.btn-primary') || 
-                         await this.page.$('button[type="submit"]') ||
-                         await this.page.$$('button').then(buttons => buttons[0]);
-      
-      if (nextButton) {
-        await nextButton.click();
+    let phoneInput = null;
+    for (const selector of phoneSelectors) {
+      try {
+        phoneInput = await this.page.waitForSelector(selector, { timeout: 3000 });
+        if (phoneInput) {
+          console.log(`✅ Найден селектор: ${selector}`);
+          break;
+        }
+      } catch (e) {
+        // Продолжаем пробовать следующий селектор
       }
+    }
 
-      console.log('✅ Номер введен, ожидание кода...');
-      await this.page.waitForTimeout(5000);
-
-      return { 
-        success: true, 
-        message: 'Бот ввел номер телефона. Код отправлен в официальный Telegram.' 
-      };
-      
-    } catch (error) {
-      console.error('❌ Ошибка ввода номера:', error);
+    if (!phoneInput) {
+      // Делаем скриншот для отладки
+      await this.page.screenshot({ path: 'debug-telegram.png' });
       return { 
         success: false, 
-        error: `Ошибка автоматизации: ${error.message}` 
+        error: 'Не удалось найти поле ввода номера. Интерфейс Telegram изменился.' 
       };
     }
-  }
 
+    console.log(`📱 Ввод номера: ${phoneNumber}`);
+    await phoneInput.click({ clickCount: 3 });
+    await phoneInput.type(phoneNumber, { delay: 150 });
+
+    // Пробуем найти кнопку "Next" разными способами
+    const buttonSelectors = [
+      'button[type="submit"]',
+      'button.btn-primary',
+      'button.Button--primary',
+      'button:contains("Next")',
+      'button:contains("Далее")',
+      'button:contains("Продолжить")',
+      '.btn-primary',
+      '.Button--primary'
+    ];
+
+    let nextButton = null;
+    for (const selector of buttonSelectors) {
+      try {
+        if (selector.includes('contains')) {
+          const text = selector.match(/contains\("([^"]+)"\)/)[1];
+          nextButton = await this.page.$x(`//button[contains(text(), '${text}')]`);
+          if (nextButton.length > 0) nextButton = nextButton[0];
+        } else {
+          nextButton = await this.page.$(selector);
+        }
+        if (nextButton) {
+          console.log(`✅ Найдена кнопка: ${selector}`);
+          break;
+        }
+      } catch (e) {
+        // Продолжаем поиск
+      }
+    }
+
+    if (!nextButton) {
+      // Пробуем кликнуть по первой кнопке
+      const buttons = await this.page.$$('button');
+      if (buttons.length > 0) {
+        nextButton = buttons[0];
+      }
+    }
+
+    if (nextButton) {
+      await nextButton.click();
+      console.log('✅ Номер введен, ожидание кода...');
+    } else {
+      console.log('⚠️ Кнопка не найдена, отправляем Enter');
+      await this.page.keyboard.press('Enter');
+    }
+
+    await this.page.waitForTimeout(8000);
+
+    // Проверяем, перешли ли на страницу ввода кода
+    const codeInput = await this.page.$('input[type="text"]');
+    if (codeInput) {
+      return { 
+        success: true, 
+        message: '✅ Бот ввел номер телефона! Код отправлен в официальный Telegram.' 
+      };
+    } else {
+      return { 
+        success: true, 
+        message: '✅ Номер введен! Проверяем следующий шаг...' 
+      };
+    }
+    
+  } catch (error) {
+    console.error('❌ Ошибка ввода номера:', error);
+    
+    // Делаем скриншот для отладки
+    try {
+      await this.page.screenshot({ path: 'error-debug.png' });
+    } catch (e) {}
+    
+    return { 
+      success: false, 
+      error: `Ошибка автоматизации: ${error.message}` 
+    };
+  }
+}
   async enterAuthCode(code) {
     try {
       console.log(`🔢 Ввод кода подтверждения: ${code}`);
