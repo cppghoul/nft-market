@@ -1,17 +1,9 @@
-[phases.setup]
-cmds = [
-    "apt-get update",
-    "apt-get install -y --no-install-recommends libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libgbm1 libasound2t64 libpangocairo-1.0-0 libxss1 libgtk-3-0 libxshmfence1 libglu1 chromium"
-]
+[build]
+builder = "NIXPACKS"
 
-[phases.install]
-cmds = ["npm install"]
+[deploy]
+startCommand = "npm start"
 
-[phases.build]
-cmds = ["echo 'No build step needed'"]
-
-[start]
-cmd = "npm start"
-
-[build.args]
-NODE_ENV = "production"
+[[services]]
+name = "web"
+port = 3000
