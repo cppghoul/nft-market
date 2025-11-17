@@ -1,8 +1,11 @@
 [phases.setup]
-cmds = ["apt-get update", "apt-get install -y --no-install-recommends libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libgbm1 libasound2 libpangocairo-1.0-0 libxss1 libgtk-3-0 libxshmfence1 libglu1 chromium"]
+cmds = [
+    "apt-get update",
+    "apt-get install -y --no-install-recommends libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libgbm1 libasound2t64 libpangocairo-1.0-0 libxss1 libgtk-3-0 libxshmfence1 libglu1 chromium"
+]
 
 [phases.install]
-cmds = ["npm install --legacy-peer-deps"]
+cmds = ["npm install"]
 
 [phases.build]
 cmds = ["echo 'No build step needed'"]
