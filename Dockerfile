@@ -1,18 +1,13 @@
-FROM python:3.9-slim
+FROM node:18-alpine
 
 WORKDIR /app
 
-# Копируем зависимости
-COPY requirements.txt .
+COPY package*.json ./
 
-# Устанавливаем зависимости
-RUN pip install --no-cache-dir -r requirements.txt
+RUN npm install
 
-# Копируем весь проект
 COPY . .
 
-# Открываем порт
-EXPOSE 5000
+EXPOSE 8080
 
-# Запускаем приложение
-CMD ["python", "launch.py"]
+CMD ["npm", "start"]
