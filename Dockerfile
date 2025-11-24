@@ -2,14 +2,12 @@ FROM python:3.11-alpine
 
 WORKDIR /app
 
+# Копируем и устанавливаем зависимости
 COPY requirements.txt .
-
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Копируем весь проект включая .env
 COPY . .
-
-# Копируем .env файл
-COPY .env .env
 
 EXPOSE 8080
 
