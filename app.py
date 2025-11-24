@@ -7,8 +7,10 @@ from flask import Flask, request, jsonify
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import (
-    SessionPasswordNeeded, PhoneCodeInvalid, 
-    PhoneNumberInvalid, PhoneCodeExpired
+    SessionPasswordNeededError, 
+    PhoneCodeInvalidError, 
+    PhoneNumberInvalidError, 
+    PhoneCodeExpiredError
 )
 
 # Настройка логирования
