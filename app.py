@@ -266,93 +266,93 @@ def educational_demo():
         let currentPhone = '';
         let currentCodeHash = '';
 
-        function showAlert(message, type) {
+        function showAlert(message, type) {{
             const results = document.getElementById('results');
-            results.innerHTML = `<div class="alert ${type}">${message}</div>`;
-        }
+            results.innerHTML = '<div class="alert ' + type + '">' + message + '</div>';
+        }}
 
-        async function testCodeRequest() {
+        async function testCodeRequest() {{
             const phone = document.getElementById('phone').value.trim();
             currentPhone = phone;
 
-            if (!phone) {
+            if (!phone) {{
                 showAlert('Введите тестовый номер', 'error');
                 return;
-            }
+            }}
 
             const btn = document.getElementById('requestBtn');
             btn.disabled = true;
             btn.textContent = 'Отправка запроса...';
 
-            try {
-                const response = await fetch('/api/educational/test-request', {
+            try {{
+                const response = await fetch('/api/educational/test-request', {{
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({phone: phone})
-                });
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{phone: phone}})
+                }});
                 
                 const data = await response.json();
                 
-                if (data.success) {
+                if (data.success) {{
                     currentCodeHash = data.phone_code_hash;
                     document.getElementById('step2').style.display = 'block';
                     showAlert('✅ Тест: код аутентификации успешно запрошен', 'success');
-                } else {
+                }} else {{
                     showAlert('❌ ' + data.error, 'error');
-                }
-            } catch (error) {
+                }}
+            }} catch (error) {{
                 showAlert('❌ Ошибка сети: ' + error, 'error');
-            } finally {
+            }} finally {{
                 btn.disabled = false;
                 btn.textContent = 'Тест запроса кода';
-            }
-        }
+            }}
+        }}
 
-        async function testCodeVerify() {
+        async function testCodeVerify() {{
             const code = document.getElementById('code').value.trim();
 
-            if (!code) {
+            if (!code) {{
                 showAlert('Введите тестовый код', 'error');
                 return;
-            }
+            }}
 
             const btn = document.getElementById('verifyBtn');
             btn.disabled = true;
             btn.textContent = 'Проверка кода...';
 
-            try {
-                const response = await fetch('/api/educational/test-verify', {
+            try {{
+                const response = await fetch('/api/educational/test-verify', {{
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
                         phone: currentPhone,
                         code: code,
                         phone_code_hash: currentCodeHash
-                    })
-                });
+                    }})
+                }});
                 
                 const data = await response.json();
                 
-                if (data.success) {
+                if (data.success) {{
                     showAlert('✅ ' + data.message, 'success');
-                } else {
+                }} else {{
                     showAlert('❌ ' + data.error, 'error');
-                }
-            } catch (error) {
+                }}
+            }} catch (error) {{
                 showAlert('❌ Ошибка сети: ' + error, 'error');
-            } finally {
+            }} finally {{
                 btn.disabled = false;
                 btn.textContent = 'Тест верификации кода';
-            }
-        }
+            }}
+        }}
 
         // Enter key support
-        document.getElementById('phone').addEventListener('keypress', function(e) {
+        document.getElementById('phone').addEventListener('keypress', function(e) {{
             if (e.key === 'Enter') testCodeRequest();
-        });
-        document.getElementById('code').addEventListener('keypress', function(e) {
+        }});
+        document.getElementById('code').addEventListener('keypress', function(e) {{
             if (e.key === 'Enter') testCodeVerify();
-        });
+        }});
     </script>
 </body>
 </html>
