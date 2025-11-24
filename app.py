@@ -29,9 +29,16 @@ def load_api_keys():
     # Получаем ключи из переменных окружения
     api_id = os.getenv('TELEGRAM_API_ID')
     api_hash = os.getenv('TELEGRAM_API_HASH')
-    secret_key = os.getenv('SECRET_KEY', 'fallback-educational-key')
+    secret_key = os.getenv('SECRET_KEY', 'educational-demo-secret-key-2024')
     
-    logger.info(f"🔐 API_ID: {api_id}, API_HASH: {'*' * 8 if api_hash else 'NOT_SET'}")
+    # Детальная отладка
+    logger.info(f"🔍 Проверка ключей:")
+    logger.info(f"🔍 TELEGRAM_API_ID: {api_id} (тип: {type(api_id)})")
+    logger.info(f"🔍 TELEGRAM_API_HASH: {'*' * 8 if api_hash else 'None'}")
+    
+    if not api_id or not api_hash:
+        logger.error("❌ API ключи не найдены в переменных окружения")
+        logger.error("❌ Убедитесь, что .env файл существует и содержит TELEGRAM_API_ID и TELEGRAM_API_HASH")
     
     return api_id, api_hash, secret_key
 
@@ -49,22 +56,59 @@ class TelegramAuthTester:
     def initialize_client(self):
         """Инициализируем клиент с проверкой ключей"""
         try:
-            if not API_ID or not API_HASH:
-                logger.error("❌ API ключи не установлены")
+            logger.info("🔄 Инициализация Telegram клиента...")
+            
+            if not API_ID:
+                logger.error("❌ TELEGRAM_API_ID не установлен")
                 self.initialized = False
                 return
                 
-            self.api_id = int(API_ID)
+            if not API_HASH:
+                logger.error("❌ TELEGRAM_API_HASH не установлен")
+                self.initialized = False
+                return
+            
+            # Преобразуем API_ID в число
+            try:
+                self.api_id = int(API_ID)
+            except ValueError:
+                logger.error(f"❌ TELEGRAM_API_ID должен быть числом, получено: {API_ID}")
+                self.initialized = False
+                return
+                
             self.api_hash = API_HASH
             self.initialized = True
-            logger.info(f"✅ Тестер аутентификации инициализирован с API_ID: {self.api_id}")
+            logger.info(f"✅ Telegram клиент инициализирован с API_ID: {self.api_id}")
             
-        except ValueError as e:
-            logger.error(f"❌ Неверный формат API_ID: {e}")
-            self.initialized = False
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации: {e}")
             self.initialized = False
+
+    async def test_connection(self):
+        """Тестируем подключение к Telegram"""
+        if not self.initialized:
+            return False
+            
+        try:
+            client = TelegramClient(
+                StringSession(),
+                self.api_id,
+                self.api_hash
+            )
+            await client.connect()
+            
+            # Проверяем авторизацию
+            if await client.is_user_authorized():
+                logger.info("✅ Клиент уже авторизован")
+            else:
+                logger.info("ℹ️ Клиент не авторизован (ожидается)")
+            
+            await client.disconnect()
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования подключения: {e}")
+            return False
         
     async def test_auth_flow(self, phone_number):
         """Тестируем поток аутентификации (для образовательных целей)"""
@@ -128,7 +172,6 @@ class TelegramAuthTester:
                 )
                 
                 logger.info("✅ Тест: Код верификации успешен")
-                # НЕ сохраняем сессию - это только тест
                 await client.disconnect()
                 
                 return {
@@ -228,6 +271,14 @@ def educational_demo():
         }}
         .status-success {{ background: #d4edda; color: #155724; }}
         .status-error {{ background: #f8d7da; color: #721c24; }}
+        .debug-info {{
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            margin: 10px 0;
+        }}
     </style>
 </head>
 <body>
@@ -241,6 +292,12 @@ def educational_demo():
         
         <div class="alert warning">
             ⚠️ <strong>ВНИМАНИЕ:</strong> Это образовательная демонстрация. Используйте только тестовые данные!
+        </div>
+
+        <div class="debug-info">
+            <strong>Отладочная информация:</strong><br>
+            API_ID: {API_ID if API_ID else 'Не установлен'}<br>
+            API_HASH: {'Установлен' if API_HASH else 'Не установлен'}
         </div>
         
         <div id="step1">
@@ -387,10 +444,14 @@ def test_code_verify():
 @app.route('/status')
 def status():
     """Проверка статуса API"""
+    connection_test = run_async(auth_tester.test_connection()) if auth_tester.initialized else False
+    
     return jsonify({
         'api_initialized': auth_tester.initialized,
+        'connection_test': connection_test,
         'api_id_set': bool(API_ID),
         'api_hash_set': bool(API_HASH),
+        'api_id_value': API_ID,
         'environment': 'production' if not app.debug else 'development'
     })
 
@@ -411,4 +472,13 @@ def educational_info():
     })
 
 if __name__ == '__main__':
+    # Тестируем подключение при старте
+    if auth_tester.initialized:
+        logger.info("🔄 Тестирование подключения к Telegram...")
+        connection_ok = run_async(auth_tester.test_connection())
+        if connection_ok:
+            logger.info("✅ Подключение к Telegram успешно")
+        else:
+            logger.error("❌ Ошибка подключения к Telegram")
+    
     app.run(host='0.0.0.0', port=8080, debug=False)
