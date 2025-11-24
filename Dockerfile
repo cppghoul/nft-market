@@ -8,6 +8,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Копируем .env файл
+COPY .env .env
+
 EXPOSE 8080
 
 CMD ["python", "app.py"]
