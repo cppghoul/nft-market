@@ -1,8 +1,8 @@
 [build]
-builder = "nixpacks"
+builder = "DOCKERFILE"
 
 [deploy]
-startCommand = "npm start"
+startCommand = "python app.py"
 
 [[services]]
 name = "web"
