@@ -166,7 +166,7 @@ class TelegramAuthTester:
             # Пытаемся войти с кодом (образовательная цель)
             try:
                 await client.sign_in(
-                    phone_number=phone_number,
+                    phone=phone_number,
                     code=code,
                     phone_code_hash=phone_code_hash
                 )
