@@ -1,25 +1,13 @@
-FROM node:18-alpine
-
-# Устанавливаем только необходимые системные зависимости
-RUN apk add --no-cache \
-    python3 \
-    make \
-    g++ \
-    && rm -rf /var/cache/apk/*
+FROM python:3.11-alpine
 
 WORKDIR /app
 
-# Копируем package.json отдельно для кэширования
-COPY package.json package-lock.json* ./
+COPY requirements.txt .
 
-# Устанавливаем зависимости с оптимизацией
-RUN npm config set registry https://registry.npmjs.org/ \
-    && npm install --production --no-optional --build-from-source \
-    && npm cache clean --force
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем исходный код
 COPY . .
 
 EXPOSE 8080
 
-CMD ["npm", "start"]
+CMD ["python", "app.py"]
