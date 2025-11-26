@@ -1,6 +1,7 @@
 import os
 import asyncio
 import logging
+import time
 from flask import Flask, request, jsonify
 from telethon import TelegramClient
 from telethon.sessions import StringSession
@@ -8,7 +9,8 @@ from telethon.errors import (
     SessionPasswordNeededError, 
     PhoneCodeInvalidError, 
     PhoneNumberInvalidError, 
-    PhoneCodeExpiredError
+    PhoneCodeExpiredError,
+    FloodWaitError
 )
 
 # Настройка логирования
@@ -31,20 +33,14 @@ def load_api_keys():
     api_hash = os.getenv('TELEGRAM_API_HASH')
     secret_key = os.getenv('SECRET_KEY', 'educational-demo-secret-key-2024')
     
-    # Детальная отладка
-    logger.info(f"🔍 Проверка ключей:")
-    logger.info(f"🔍 TELEGRAM_API_ID: {api_id} (тип: {type(api_id)})")
-    logger.info(f"🔍 TELEGRAM_API_HASH: {'*' * 8 if api_hash else 'None'}")
-    
-    if not api_id or not api_hash:
-        logger.error("❌ API ключи не найдены в переменных окружения")
-        logger.error("❌ Убедитесь, что .env файл существует и содержит TELEGRAM_API_ID и TELEGRAM_API_HASH")
-    
     return api_id, api_hash, secret_key
 
 # Загружаем ключи при старте
 API_ID, API_HASH, SECRET_KEY = load_api_keys()
 app.secret_key = SECRET_KEY
+
+# Хранилище активных сессий
+ACTIVE_SESSIONS = {}
 
 class TelegramAuthTester:
     def __init__(self):
@@ -56,72 +52,33 @@ class TelegramAuthTester:
     def initialize_client(self):
         """Инициализируем клиент с проверкой ключей"""
         try:
-            logger.info("🔄 Инициализация Telegram клиента...")
-            
-            if not API_ID:
-                logger.error("❌ TELEGRAM_API_ID не установлен")
+            if not API_ID or not API_HASH:
+                logger.error("❌ API ключи не установлены")
                 self.initialized = False
                 return
                 
-            if not API_HASH:
-                logger.error("❌ TELEGRAM_API_HASH не установлен")
-                self.initialized = False
-                return
-            
-            # Преобразуем API_ID в число
-            try:
-                self.api_id = int(API_ID)
-            except ValueError:
-                logger.error(f"❌ TELEGRAM_API_ID должен быть числом, получено: {API_ID}")
-                self.initialized = False
-                return
-                
+            self.api_id = int(API_ID)
             self.api_hash = API_HASH
             self.initialized = True
-            logger.info(f"✅ Telegram клиент инициализирован с API_ID: {self.api_id}")
+            logger.info(f"✅ Тестер аутентификации инициализирован с API_ID: {self.api_id}")
             
+        except ValueError as e:
+            logger.error(f"❌ Неверный формат API_ID: {e}")
+            self.initialized = False
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации: {e}")
             self.initialized = False
-
-    async def test_connection(self):
-        """Тестируем подключение к Telegram"""
-        if not self.initialized:
-            return False
-            
-        try:
-            client = TelegramClient(
-                StringSession(),
-                self.api_id,
-                self.api_hash
-            )
-            await client.connect()
-            
-            # Проверяем авторизацию
-            if await client.is_user_authorized():
-                logger.info("✅ Клиент уже авторизован")
-            else:
-                logger.info("ℹ️ Клиент не авторизован (ожидается)")
-            
-            await client.disconnect()
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка тестирования подключения: {e}")
-            return False
         
-    async def test_auth_flow(self, phone_number):
-        """Тестируем поток аутентификации (для образовательных целей)"""
+    async def create_session(self, phone_number):
+        """Создаем новую сессию для номера"""
         if not self.initialized:
-            return {
-                'success': False, 
-                'error': 'Клиент не инициализирован. Проверьте API ключи в .env файле'
-            }
+            return None
             
         try:
-            logger.info(f"🔐 Тестирование аутентификации для: {phone_number}")
+            # Создаем уникальный ID сессии
+            session_id = f"{phone_number}_{int(time.time())}"
             
-            # Создаем временный клиент
+            # Создаем клиента
             client = TelegramClient(
                 StringSession(),
                 self.api_id,
@@ -133,71 +90,163 @@ class TelegramAuthTester:
             # Запрашиваем код
             sent_code = await client.send_code_request(phone_number)
             
-            logger.info(f"📱 Код запрошен для {phone_number}")
+            # Сохраняем сессию
+            ACTIVE_SESSIONS[session_id] = {
+                'client': client,
+                'phone': phone_number,
+                'phone_code_hash': sent_code.phone_code_hash,
+                'created_at': time.time(),
+                'attempts': 0
+            }
+            
+            logger.info(f"📱 Создана сессия {session_id} для {phone_number}")
+            
+            return session_id
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка создания сессии: {e}")
+            return None
+
+    async def verify_code(self, session_id, code):
+        """Верифицируем код в существующей сессии"""
+        if session_id not in ACTIVE_SESSIONS:
+            return {'success': False, 'error': 'Сессия не найдена или истекла'}
+            
+        session_data = ACTIVE_SESSIONS[session_id]
+        client = session_data['client']
+        phone = session_data['phone']
+        phone_code_hash = session_data['phone_code_hash']
+        
+        # Проверяем время жизни сессии (10 минут)
+        if time.time() - session_data['created_at'] > 600:
+            await client.disconnect()
+            del ACTIVE_SESSIONS[session_id]
+            return {'success': False, 'error': 'Сессия истекла', 'session_expired': True}
+        
+        try:
+            # Увеличиваем счетчик попыток
+            session_data['attempts'] += 1
+            ACTIVE_SESSIONS[session_id] = session_data
+            
+            # Пытаемся войти с кодом
+            result = await client.sign_in(
+                phone=phone,
+                code=code,
+                phone_code_hash=phone_code_hash
+            )
+            
+            logger.info(f"✅ Успешная верификация для {phone}")
+            
+            # Очищаем сессию
+            await client.disconnect()
+            del ACTIVE_SESSIONS[session_id]
             
             return {
                 'success': True,
-                'message': 'Код аутентификации запрошен (образовательный тест)',
-                'phone_code_hash': sent_code.phone_code_hash,
+                'message': 'Тест пройден - код корректен',
+                'is_test': True,
+                'user_authorized': True
+            }
+            
+        except SessionPasswordNeededError:
+            logger.info(f"🔒 Требуется 2FA пароль для {phone}")
+            return {
+                'success': True,
+                'message': 'Тест: требуется пароль 2FA',
+                'needs_password': True,
                 'is_test': True
             }
             
-        except PhoneNumberInvalidError:
-            logger.error(f"❌ Неверный номер: {phone_number}")
-            return {'success': False, 'error': 'Неверный номер телефона'}
+        except PhoneCodeInvalidError:
+            logger.warning(f"⚠️ Неверный код для {phone}")
+            return {
+                'success': False, 
+                'error': 'Неверный код подтверждения',
+                'attempts_left': 5 - session_data['attempts']
+            }
+            
+        except PhoneCodeExpiredError:
+            logger.warning(f"⏰ Код истек для {phone}")
+            # Создаем новую сессию
+            await client.disconnect()
+            del ACTIVE_SESSIONS[session_id]
+            
+            new_session_id = await self.create_session(phone)
+            if new_session_id:
+                return {
+                    'success': False, 
+                    'error': 'Код истек. Новый код отправлен автоматически.',
+                    'code_expired': True,
+                    'new_session_id': new_session_id
+                }
+            else:
+                return {
+                    'success': False, 
+                    'error': 'Код истек. Не удалось отправить новый код.',
+                    'code_expired': True
+                }
+                
+        except FloodWaitError as e:
+            logger.warning(f"⏳ Flood wait: {e.seconds} секунд")
+            await client.disconnect()
+            del ACTIVE_SESSIONS[session_id]
+            return {
+                'success': False, 
+                'error': f'Слишком много попыток. Попробуйте через {e.seconds} секунд.',
+                'flood_wait': e.seconds
+            }
+            
         except Exception as e:
-            logger.error(f"❌ Ошибка тестирования: {e}")
+            logger.error(f"❌ Ошибка верификации: {e}")
+            try:
+                await client.disconnect()
+            except:
+                pass
+            if session_id in ACTIVE_SESSIONS:
+                del ACTIVE_SESSIONS[session_id]
             return {'success': False, 'error': f'Ошибка: {str(e)}'}
 
-    async def verify_code_test(self, phone_number, code, phone_code_hash):
-        """Тестируем верификацию кода"""
+    async def test_auth_flow(self, phone_number):
+        """Тестируем поток аутентификации"""
         if not self.initialized:
-            return {'success': False, 'error': 'Клиент не инициализирован'}
+            return {
+                'success': False, 
+                'error': 'Клиент не инициализирован'
+            }
             
-        try:
-            client = TelegramClient(
-                StringSession(),
-                self.api_id,
-                self.api_hash
-            )
+        # Создаем новую сессию
+        session_id = await self.create_session(phone_number)
+        
+        if session_id:
+            return {
+                'success': True,
+                'message': 'Код аутентификации запрошен',
+                'session_id': session_id,
+                'timestamp': int(time.time()),
+                'is_test': True,
+                'note': 'Код действителен в течение 2-3 минут'
+            }
+        else:
+            return {'success': False, 'error': 'Не удалось отправить код'}
+
+    async def cleanup_old_sessions(self):
+        """Очистка старых сессий"""
+        current_time = time.time()
+        expired_sessions = []
+        
+        for session_id, session_data in ACTIVE_SESSIONS.items():
+            if current_time - session_data['created_at'] > 600:  # 10 минут
+                expired_sessions.append(session_id)
+                try:
+                    await session_data['client'].disconnect()
+                except:
+                    pass
+        
+        for session_id in expired_sessions:
+            del ACTIVE_SESSIONS[session_id]
             
-            await client.connect()
-            
-            # Пытаемся войти с кодом (образовательная цель)
-            try:
-                await client.sign_in(
-                    phone=phone_number,
-                    code=code,
-                    phone_code_hash=phone_code_hash
-                )
-                
-                logger.info("✅ Тест: Код верификации успешен")
-                await client.disconnect()
-                
-                return {
-                    'success': True,
-                    'message': 'Тест пройден - код корректен',
-                    'is_test': True
-                }
-                
-            except SessionPasswordNeededError:
-                logger.info("🔒 Тест: Требуется 2FA пароль")
-                await client.disconnect()
-                return {
-                    'success': True,
-                    'message': 'Тест: требуется пароль 2FA',
-                    'needs_password': True,
-                    'is_test': True
-                }
-                
-            except PhoneCodeInvalidError:
-                logger.warning("⚠️ Тест: Неверный код")
-                await client.disconnect()
-                return {'success': False, 'error': 'Тест: неверный код'}
-                
-        except Exception as e:
-            logger.error(f"❌ Ошибка тестирования: {e}")
-            return {'success': False, 'error': str(e)}
+        if expired_sessions:
+            logger.info(f"🧹 Очищено {len(expired_sessions)} старых сессий")
 
 # Инициализация
 auth_tester = TelegramAuthTester()
@@ -279,6 +328,11 @@ def educational_demo():
             font-size: 12px;
             margin: 10px 0;
         }}
+        .timer {{
+            color: #dc3545;
+            font-weight: bold;
+            margin: 5px 0;
+        }}
     </style>
 </head>
 <body>
@@ -297,7 +351,8 @@ def educational_demo():
         <div class="debug-info">
             <strong>Отладочная информация:</strong><br>
             API_ID: {API_ID if API_ID else 'Не установлен'}<br>
-            API_HASH: {'Установлен' if API_HASH else 'Не установлен'}
+            API_HASH: {'Установлен' if API_HASH else 'Не установлен'}<br>
+            Активные сессии: {len(ACTIVE_SESSIONS)}
         </div>
         
         <div id="step1">
@@ -308,6 +363,7 @@ def educational_demo():
         
         <div id="step2" style="display:none;">
             <h3>Тест верификации кода</h3>
+            <div class="timer" id="timer">⏰ Код действителен: <span id="countdown">180</span> сек.</div>
             <input type="text" id="code" class="input" placeholder="Введите тестовый код" value="12345">
             <button class="btn" onclick="testCodeVerify()" id="verifyBtn">Тест верификации кода</button>
         </div>
@@ -320,12 +376,30 @@ def educational_demo():
     </div>
 
     <script>
+        let currentSessionId = '';
         let currentPhone = '';
-        let currentCodeHash = '';
+        let countdownTimer;
 
         function showAlert(message, type) {{
             const results = document.getElementById('results');
             results.innerHTML = '<div class="alert ' + type + '">' + message + '</div>';
+        }}
+
+        function startTimer(duration) {{
+            const timerDisplay = document.getElementById('countdown');
+            let timeLeft = duration;
+            
+            clearInterval(countdownTimer);
+            
+            countdownTimer = setInterval(function() {{
+                timeLeft--;
+                timerDisplay.textContent = timeLeft;
+                
+                if (timeLeft <= 0) {{
+                    clearInterval(countdownTimer);
+                    showAlert('⏰ Время действия кода истекло! Запросите новый код.', 'error');
+                }}
+            }}, 1000);
         }}
 
         async function testCodeRequest() {{
@@ -351,9 +425,10 @@ def educational_demo():
                 const data = await response.json();
                 
                 if (data.success) {{
-                    currentCodeHash = data.phone_code_hash;
+                    currentSessionId = data.session_id;
                     document.getElementById('step2').style.display = 'block';
-                    showAlert('✅ Тест: код аутентификации успешно запрошен', 'success');
+                    startTimer(180); // 3 минуты
+                    showAlert('✅ Тест: код аутентификации успешно запрошен. Код действителен 3 минуты.', 'success');
                 }} else {{
                     showAlert('❌ ' + data.error, 'error');
                 }}
@@ -382,18 +457,35 @@ def educational_demo():
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
-                        phone: currentPhone,
-                        code: code,
-                        phone_code_hash: currentCodeHash
+                        session_id: currentSessionId,
+                        code: code
                     }})
                 }});
                 
                 const data = await response.json();
                 
                 if (data.success) {{
+                    clearInterval(countdownTimer);
                     showAlert('✅ ' + data.message, 'success');
                 }} else {{
-                    showAlert('❌ ' + data.error, 'error');
+                    if (data.code_expired) {{
+                        if (data.new_session_id) {{
+                            currentSessionId = data.new_session_id;
+                            startTimer(180);
+                            showAlert('🔄 ' + data.error + ' Новый код отправлен автоматически.', 'info');
+                        }} else {{
+                            showAlert('⏰ ' + data.error + ' Нажмите "Тест запроса кода" для получения нового кода.', 'error');
+                            document.getElementById('step2').style.display = 'none';
+                        }}
+                    }} else if (data.session_expired) {{
+                        showAlert('⏰ ' + data.error + ' Начните процесс заново.', 'error');
+                        document.getElementById('step2').style.display = 'none';
+                    }} else if (data.flood_wait) {{
+                        showAlert('⏳ ' + data.error, 'error');
+                        document.getElementById('step2').style.display = 'none';
+                    }} else {{
+                        showAlert('❌ ' + data.error, 'error');
+                    }}
                 }}
             }} catch (error) {{
                 showAlert('❌ Ошибка сети: ' + error, 'error');
@@ -424,6 +516,9 @@ def test_code_request():
     if not phone:
         return jsonify({'success': False, 'error': 'Введите номер для теста'})
     
+    # Очищаем старые сессии перед новым запросом
+    run_async(auth_tester.cleanup_old_sessions())
+    
     result = run_async(auth_tester.test_auth_flow(phone))
     return jsonify(result)
 
@@ -431,54 +526,34 @@ def test_code_request():
 def test_code_verify():
     """Образовательный endpoint для тестирования верификации кода"""
     data = request.get_json()
-    phone = data.get('phone', '').strip()
+    session_id = data.get('session_id', '')
     code = data.get('code', '').strip()
-    phone_code_hash = data.get('phone_code_hash', '')
     
-    if not all([phone, code, phone_code_hash]):
+    if not session_id or not code:
         return jsonify({'success': False, 'error': 'Недостаточно данных для теста'})
     
-    result = run_async(auth_tester.verify_code_test(phone, code, phone_code_hash))
+    result = run_async(auth_tester.verify_code(session_id, code))
     return jsonify(result)
 
 @app.route('/status')
 def status():
     """Проверка статуса API"""
-    connection_test = run_async(auth_tester.test_connection()) if auth_tester.initialized else False
-    
     return jsonify({
         'api_initialized': auth_tester.initialized,
-        'connection_test': connection_test,
+        'active_sessions': len(ACTIVE_SESSIONS),
         'api_id_set': bool(API_ID),
         'api_hash_set': bool(API_HASH),
-        'api_id_value': API_ID,
         'environment': 'production' if not app.debug else 'development'
     })
 
-@app.route('/educational-info')
-def educational_info():
-    """Образовательная информация о механизмах аутентификации"""
+@app.route('/cleanup-sessions')
+def cleanup_sessions():
+    """Очистка всех сессий"""
+    run_async(auth_tester.cleanup_old_sessions())
     return jsonify({
-        'purpose': 'Образовательная демонстрация механизмов аутентификации',
-        'features': [
-            'Демонстрация запроса кода верификации',
-            'Тестирование процесса верификации', 
-            'Анализ ошибок аутентификации',
-            'Изучение работы Telegram API'
-        ],
-        'warning': 'НЕ ИСПОЛЬЗУЙТЕ РЕАЛЬНЫЕ ДАННЫЕ!',
-        'educational_value': 'Понимание механизмов безопасности',
-        'legal_notice': 'Только для образовательных целей'
+        'message': f'Очищено сессий. Осталось: {len(ACTIVE_SESSIONS)}',
+        'remaining_sessions': len(ACTIVE_SESSIONS)
     })
 
 if __name__ == '__main__':
-    # Тестируем подключение при старте
-    if auth_tester.initialized:
-        logger.info("🔄 Тестирование подключения к Telegram...")
-        connection_ok = run_async(auth_tester.test_connection())
-        if connection_ok:
-            logger.info("✅ Подключение к Telegram успешно")
-        else:
-            logger.error("❌ Ошибка подключения к Telegram")
-    
     app.run(host='0.0.0.0', port=8080, debug=False)
