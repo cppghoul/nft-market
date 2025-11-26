@@ -489,7 +489,7 @@ def educational_demo():
                         showAlert('⏳ ' + data.error, 'error');
                         document.getElementById('step2').style.display = 'none';
                     }} else if (data.attempts_left !== undefined) {{
-                        showAlert('❌ ' + data.error + ` Осталось попыток: ${data.attempts_left}`, 'error');
+                        showAlert('❌ ' + data.error + ' Осталось попыток: ' + data.attempts_left, 'error');
                         document.getElementById('code').value = '';
                         document.getElementById('code').focus();
                     }} else {{
