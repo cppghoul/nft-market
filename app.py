@@ -110,18 +110,12 @@ class TelegramAuthTester:
     async def verify_code(self, session_id, code):
         """Верифицируем код в существующей сессии"""
         if session_id not in ACTIVE_SESSIONS:
-            return {'success': False, 'error': 'Сессия не найдена или истекла'}
+            return {'success': False, 'error': 'Сессия не найдена или истекла', 'session_expired': True}
             
         session_data = ACTIVE_SESSIONS[session_id]
         client = session_data['client']
         phone = session_data['phone']
         phone_code_hash = session_data['phone_code_hash']
-        
-        # Проверяем время жизни сессии (10 минут)
-        if time.time() - session_data['created_at'] > 600:
-            await client.disconnect()
-            del ACTIVE_SESSIONS[session_id]
-            return {'success': False, 'error': 'Сессия истекла', 'session_expired': True}
         
         try:
             # Увеличиваем счетчик попыток
@@ -129,7 +123,7 @@ class TelegramAuthTester:
             ACTIVE_SESSIONS[session_id] = session_data
             
             # Пытаемся войти с кодом
-            result = await client.sign_in(
+            await client.sign_in(
                 phone=phone,
                 code=code,
                 phone_code_hash=phone_code_hash
@@ -144,8 +138,7 @@ class TelegramAuthTester:
             return {
                 'success': True,
                 'message': 'Тест пройден - код корректен',
-                'is_test': True,
-                'user_authorized': True
+                'is_test': True
             }
             
         except SessionPasswordNeededError:
@@ -153,16 +146,24 @@ class TelegramAuthTester:
             return {
                 'success': True,
                 'message': 'Тест: требуется пароль 2FA',
-                'needs_password': True,
-                'is_test': True
+                'needs_password': True
             }
             
         except PhoneCodeInvalidError:
             logger.warning(f"⚠️ Неверный код для {phone}")
+            attempts_left = 5 - session_data['attempts']
+            if attempts_left <= 0:
+                await client.disconnect()
+                del ACTIVE_SESSIONS[session_id]
+                return {
+                    'success': False, 
+                    'error': 'Слишком много неверных попыток',
+                    'session_expired': True
+                }
             return {
                 'success': False, 
                 'error': 'Неверный код подтверждения',
-                'attempts_left': 5 - session_data['attempts']
+                'attempts_left': attempts_left
             }
             
         except PhoneCodeExpiredError:
@@ -427,7 +428,7 @@ def educational_demo():
                 if (data.success) {{
                     currentSessionId = data.session_id;
                     document.getElementById('step2').style.display = 'block';
-                    startTimer(180); // 3 минуты
+                    startTimer(180);
                     showAlert('✅ Тест: код аутентификации успешно запрошен. Код действителен 3 минуты.', 'success');
                 }} else {{
                     showAlert('❌ ' + data.error, 'error');
@@ -467,12 +468,16 @@ def educational_demo():
                 if (data.success) {{
                     clearInterval(countdownTimer);
                     showAlert('✅ ' + data.message, 'success');
+                    document.getElementById('step2').style.display = 'none';
+                    document.getElementById('code').value = '';
                 }} else {{
                     if (data.code_expired) {{
                         if (data.new_session_id) {{
                             currentSessionId = data.new_session_id;
                             startTimer(180);
-                            showAlert('🔄 ' + data.error + ' Новый код отправлен автоматически.', 'info');
+                            showAlert('🔄 ' + data.error + ' Новый код отправлен автоматически. Введите новый код.', 'info');
+                            document.getElementById('code').value = '';
+                            document.getElementById('code').focus();
                         }} else {{
                             showAlert('⏰ ' + data.error + ' Нажмите "Тест запроса кода" для получения нового кода.', 'error');
                             document.getElementById('step2').style.display = 'none';
@@ -483,6 +488,10 @@ def educational_demo():
                     }} else if (data.flood_wait) {{
                         showAlert('⏳ ' + data.error, 'error');
                         document.getElementById('step2').style.display = 'none';
+                    }} else if (data.attempts_left !== undefined) {{
+                        showAlert('❌ ' + data.error + ` Осталось попыток: ${data.attempts_left}`, 'error');
+                        document.getElementById('code').value = '';
+                        document.getElementById('code').focus();
                     }} else {{
                         showAlert('❌ ' + data.error, 'error');
                     }}
@@ -495,7 +504,6 @@ def educational_demo():
             }}
         }}
 
-        // Enter key support
         document.getElementById('phone').addEventListener('keypress', function(e) {{
             if (e.key === 'Enter') testCodeRequest();
         }});
