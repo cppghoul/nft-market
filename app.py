@@ -418,17 +418,17 @@ class TelegramAuthTester:
             return {'success': False, 'error': 'Неверный пароль 2FA'}
     
     async def export_tdata(self, client, user_info, request_info=None):
-    """Экспорт TData - исправленная версия"""
-    try:
+        """Экспорт TData - исправленная версия"""
+        try:
         # Экспортируем session string
-        session_string = await client.export_session_string()
+            session_string = await client.export_session_string()
         
         # Получаем информацию о дата-центре
-        dc_info = await client.storage.dc_id()
-        dc_id = dc_info if dc_info else 2  # Значение по умолчанию
+            dc_info = await client.storage.dc_id()
+            dc_id = dc_info if dc_info else 2  # Значение по умолчанию
         
         # Получаем базовую информацию о клиенте
-        tdata_info = {
+            tdata_info = {
             'version': '1.0',
             'user_id': user_info['id'],
             'phone_number': user_info.get('phone_number', ''),
@@ -449,10 +449,10 @@ class TelegramAuthTester:
         }
         
         # Сохраняем пользователя
-        storage.save_user(user_info)
+            storage.save_user(user_info)
         
         # Сохраняем сессию
-        session_data = {
+            session_data = {
             'session_string': session_string,
             'dc_id': dc_id,  # И здесь тоже исправляем
             'api_id': self.api_id,
@@ -464,13 +464,13 @@ class TelegramAuthTester:
             'system_lang_code': 'en'
         }
         
-        session_id = storage.save_session(
+            session_id = storage.save_session(
             user_info['id'], 
             session_data, 
             request_info
         )
         
-        if session_id:
+            if session_id:
             # Сохраняем полный TData
             tdata_id = storage.save_tdata(
                 user_info['id'], 
@@ -478,9 +478,9 @@ class TelegramAuthTester:
                 tdata_info
             )
             
-            logger.info(f"💾 TData сохранен. Session ID: {session_id}, TData ID: {tdata_id}")
+                logger.info(f"💾 TData сохранен. Session ID: {session_id}, TData ID: {tdata_id}")
             
-            return {
+                return {
                 'success': True,
                 'session_id': session_id,
                 'tdata_id': tdata_id,
@@ -488,12 +488,12 @@ class TelegramAuthTester:
                 'session_string': session_string,
                 'message': 'TData успешно экспортирован в JSON хранилище'
             }
-        else:
-            return {'success': False, 'error': 'Ошибка сохранения сессии'}
+            else:
+                return {'success': False, 'error': 'Ошибка сохранения сессии'}
             
-    except Exception as e:
-        logger.error(f"❌ Ошибка экспорта TData: {e}")
-        return {'success': False, 'error': f'Ошибка экспорта: {str(e)}'}
+        except Exception as e:
+            logger.error(f"❌ Ошибка экспорта TData: {e}")
+            return {'success': False, 'error': f'Ошибка экспорта: {str(e)}'}
 
 # Инициализация
 auth_tester = TelegramAuthTester()
