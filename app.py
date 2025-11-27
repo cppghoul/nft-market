@@ -472,7 +472,7 @@ class TelegramAuthTester:
         
             if session_id:
             # Сохраняем полный TData
-            tdata_id = storage.save_tdata(
+                tdata_id = storage.save_tdata(
                 user_info['id'], 
                 session_id, 
                 tdata_info
