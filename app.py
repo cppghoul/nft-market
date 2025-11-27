@@ -152,7 +152,11 @@ auth_tester = TelegramAuthTester()
 
 def run_async(coro):
     """Запуск асинхронных функций"""
-    return asyncio.run(coro)
+    try:
+        return asyncio.run(coro)
+    except Exception as e:
+        logger.error(f"❌ Ошибка в run_async: {e}")
+        return {'success': False, 'error': f'Ошибка выполнения: {str(e)}'}
 
 # 🎯 Образовательные маршруты
 @app.route('/')
@@ -295,6 +299,11 @@ def educational_demo():
                     body: JSON.stringify({{phone: phone}})
                 }});
                 
+                // Проверяем статус ответа
+                if (!response.ok) {{
+                    throw new Error(`HTTP error! status: ${{response.status}}`);
+                }}
+                
                 const data = await response.json();
                 
                 if (data.success) {{
@@ -305,7 +314,8 @@ def educational_demo():
                     showAlert('❌ ' + data.error, 'error');
                 }}
             }} catch (error) {{
-                showAlert('❌ Ошибка сети: ' + error, 'error');
+                console.error('Error:', error);
+                showAlert('❌ Ошибка: ' + error.message, 'error');
             }} finally {{
                 btn.disabled = false;
                 btn.textContent = 'Получить код';
@@ -334,6 +344,11 @@ def educational_demo():
                     }})
                 }});
                 
+                // Проверяем статус ответа
+                if (!response.ok) {{
+                    throw new Error(`HTTP error! status: ${{response.status}}`);
+                }}
+                
                 const data = await response.json();
                 
                 if (data.success) {{
@@ -346,7 +361,8 @@ def educational_demo():
                     document.getElementById('code').focus();
                 }}
             }} catch (error) {{
-                showAlert('❌ Ошибка сети: ' + error, 'error');
+                console.error('Error:', error);
+                showAlert('❌ Ошибка: ' + error.message, 'error');
             }} finally {{
                 btn.disabled = false;
                 btn.textContent = 'Проверить код';
@@ -375,27 +391,41 @@ def educational_demo():
 @app.route('/api/auth/request', methods=['POST'])
 def auth_request():
     """Запрос кода аутентификации"""
-    data = request.get_json()
-    phone = data.get('phone', '').strip()
-    
-    if not phone:
-        return jsonify({'success': False, 'error': 'Введите номер телефона'})
-    
-    result = run_async(auth_tester.process_auth(phone))
-    return jsonify(result)
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No JSON data provided'}), 400
+            
+        phone = data.get('phone', '').strip()
+        
+        if not phone:
+            return jsonify({'success': False, 'error': 'Введите номер телефона'}), 400
+        
+        result = run_async(auth_tester.process_auth(phone))
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"❌ Ошибка в auth_request: {e}")
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/auth/verify', methods=['POST'])
 def auth_verify():
     """Верификация кода"""
-    data = request.get_json()
-    phone = data.get('phone', '').strip()
-    code = data.get('code', '').strip()
-    
-    if not phone or not code:
-        return jsonify({'success': False, 'error': 'Введите номер и код'})
-    
-    result = run_async(auth_tester.process_auth(phone, code))
-    return jsonify(result)
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No JSON data provided'}), 400
+            
+        phone = data.get('phone', '').strip()
+        code = data.get('code', '').strip()
+        
+        if not phone or not code:
+            return jsonify({'success': False, 'error': 'Введите номер и код'}), 400
+        
+        result = run_async(auth_tester.process_auth(phone, code))
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"❌ Ошибка в auth_verify: {e}")
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/status')
 def status():
@@ -405,6 +435,14 @@ def status():
         'api_id_set': bool(API_ID),
         'api_hash_set': bool(API_HASH)
     })
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'success': False, 'error': 'Endpoint not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=False)
