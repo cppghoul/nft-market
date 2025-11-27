@@ -27,18 +27,6 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     return response
 
-@app.route('/api/auth/request', methods=['POST', 'OPTIONS'])
-def auth_request():
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'})
-    # остальной код...
-
-@app.route('/api/auth/verify', methods=['POST', 'OPTIONS']) 
-def auth_verify():
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'})
-    # остальной код...
-
 def load_api_keys():
     """Загружаем API ключи с проверкой"""
     try:
