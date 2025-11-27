@@ -100,6 +100,7 @@ class TelegramAuthTester:
             }
             
             logger.info(f"📱 Создана сессия {session_id} для {phone_number}")
+            logger.info(f"📱 Phone code hash: {sent_code.phone_code_hash}")
             
             return session_id
             
@@ -117,13 +118,19 @@ class TelegramAuthTester:
         phone = session_data['phone']
         phone_code_hash = session_data['phone_code_hash']
         
+        logger.info(f"🔐 Попытка верификации кода для {phone}")
+        logger.info(f"🔐 Введенный код: {code}")
+        logger.info(f"🔐 Phone code hash: {phone_code_hash}")
+        
         try:
             # Увеличиваем счетчик попыток
             session_data['attempts'] += 1
             ACTIVE_SESSIONS[session_id] = session_data
             
             # Пытаемся войти с кодом
-            await client.sign_in(
+            logger.info(f"🔐 Вызов sign_in с параметрами: phone={phone}, code={code}, phone_code_hash={phone_code_hash}")
+            
+            result = await client.sign_in(
                 phone=phone,
                 code=code,
                 phone_code_hash=phone_code_hash
@@ -149,8 +156,8 @@ class TelegramAuthTester:
                 'needs_password': True
             }
             
-        except PhoneCodeInvalidError:
-            logger.warning(f"⚠️ Неверный код для {phone}")
+        except PhoneCodeInvalidError as e:
+            logger.warning(f"⚠️ Неверный код для {phone}: {e}")
             attempts_left = 5 - session_data['attempts']
             if attempts_left <= 0:
                 await client.disconnect()
@@ -166,26 +173,17 @@ class TelegramAuthTester:
                 'attempts_left': attempts_left
             }
             
-        except PhoneCodeExpiredError:
-            logger.warning(f"⏰ Код истек для {phone}")
-            # Создаем новую сессию
+        except PhoneCodeExpiredError as e:
+            logger.warning(f"⏰ Код истек для {phone}: {e}")
+            # Вместо автоматической отправки нового кода, просим пользователя запросить новый
             await client.disconnect()
             del ACTIVE_SESSIONS[session_id]
             
-            new_session_id = await self.create_session(phone)
-            if new_session_id:
-                return {
-                    'success': False, 
-                    'error': 'Код истек. Новый код отправлен автоматически.',
-                    'code_expired': True,
-                    'new_session_id': new_session_id
-                }
-            else:
-                return {
-                    'success': False, 
-                    'error': 'Код истек. Не удалось отправить новый код.',
-                    'code_expired': True
-                }
+            return {
+                'success': False, 
+                'error': 'Код истек. Запросите новый код.',
+                'code_expired': True
+            }
                 
         except FloodWaitError as e:
             logger.warning(f"⏳ Flood wait: {e.seconds} секунд")
@@ -199,6 +197,7 @@ class TelegramAuthTester:
             
         except Exception as e:
             logger.error(f"❌ Ошибка верификации: {e}")
+            logger.error(f"❌ Тип ошибки: {type(e)}")
             try:
                 await client.disconnect()
             except:
@@ -214,6 +213,9 @@ class TelegramAuthTester:
                 'success': False, 
                 'error': 'Клиент не инициализирован'
             }
+            
+        # Очищаем старые сессии для этого номера
+        await self.cleanup_old_sessions()
             
         # Создаем новую сессию
         session_id = await self.create_session(phone_number)
@@ -334,6 +336,24 @@ def educational_demo():
             font-weight: bold;
             margin: 5px 0;
         }}
+        .loading {{
+            display: none;
+            text-align: center;
+            padding: 10px;
+        }}
+        .spinner {{
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }}
+        @keyframes spin {{
+            0% {{ transform: rotate(0deg); }}
+            100% {{ transform: rotate(360deg); }}
+        }}
     </style>
 </head>
 <body>
@@ -365,8 +385,13 @@ def educational_demo():
         <div id="step2" style="display:none;">
             <h3>Тест верификации кода</h3>
             <div class="timer" id="timer">⏰ Код действителен: <span id="countdown">180</span> сек.</div>
-            <input type="text" id="code" class="input" placeholder="Введите тестовый код" value="12345">
+            <input type="text" id="code" class="input" placeholder="Введите код из Telegram" maxlength="5">
             <button class="btn" onclick="testCodeVerify()" id="verifyBtn">Тест верификации кода</button>
+        </div>
+
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>Проверка кода...</p>
         </div>
         
         <div id="results"></div>
@@ -384,6 +409,10 @@ def educational_demo():
         function showAlert(message, type) {{
             const results = document.getElementById('results');
             results.innerHTML = '<div class="alert ' + type + '">' + message + '</div>';
+        }}
+
+        function showLoading(show) {{
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
         }}
 
         function startTimer(duration) {{
@@ -428,8 +457,9 @@ def educational_demo():
                 if (data.success) {{
                     currentSessionId = data.session_id;
                     document.getElementById('step2').style.display = 'block';
+                    document.getElementById('code').value = '';
                     startTimer(180);
-                    showAlert('✅ Тест: код аутентификации успешно запрошен. Код действителен 3 минуты.', 'success');
+                    showAlert('✅ Код аутентификации успешно запрошен. Проверьте Telegram и введите код.', 'success');
                 }} else {{
                     showAlert('❌ ' + data.error, 'error');
                 }}
@@ -445,13 +475,19 @@ def educational_demo():
             const code = document.getElementById('code').value.trim();
 
             if (!code) {{
-                showAlert('Введите тестовый код', 'error');
+                showAlert('Введите код из Telegram', 'error');
+                return;
+            }}
+
+            if (code.length !== 5) {{
+                showAlert('Код должен содержать 5 цифр', 'error');
                 return;
             }}
 
             const btn = document.getElementById('verifyBtn');
             btn.disabled = true;
-            btn.textContent = 'Проверка кода...';
+            btn.textContent = 'Проверка...';
+            showLoading(true);
 
             try {{
                 const response = await fetch('/api/educational/test-verify', {{
@@ -472,18 +508,10 @@ def educational_demo():
                     document.getElementById('code').value = '';
                 }} else {{
                     if (data.code_expired) {{
-                        if (data.new_session_id) {{
-                            currentSessionId = data.new_session_id;
-                            startTimer(180);
-                            showAlert('🔄 ' + data.error + ' Новый код отправлен автоматически. Введите новый код.', 'info');
-                            document.getElementById('code').value = '';
-                            document.getElementById('code').focus();
-                        }} else {{
-                            showAlert('⏰ ' + data.error + ' Нажмите "Тест запроса кода" для получения нового кода.', 'error');
-                            document.getElementById('step2').style.display = 'none';
-                        }}
+                        showAlert('⏰ ' + data.error, 'error');
+                        document.getElementById('step2').style.display = 'none';
                     }} else if (data.session_expired) {{
-                        showAlert('⏰ ' + data.error + ' Начните процесс заново.', 'error');
+                        showAlert('⏰ ' + data.error, 'error');
                         document.getElementById('step2').style.display = 'none';
                     }} else if (data.flood_wait) {{
                         showAlert('⏳ ' + data.error, 'error');
@@ -501,14 +529,33 @@ def educational_demo():
             }} finally {{
                 btn.disabled = false;
                 btn.textContent = 'Тест верификации кода';
+                showLoading(false);
             }}
         }}
 
+        // Enter key support
         document.getElementById('phone').addEventListener('keypress', function(e) {{
             if (e.key === 'Enter') testCodeRequest();
         }});
+        
         document.getElementById('code').addEventListener('keypress', function(e) {{
             if (e.key === 'Enter') testCodeVerify();
+        }});
+
+        // Auto-format phone input
+        document.getElementById('phone').addEventListener('input', function(e) {{
+            let value = e.target.value.replace(/\D/g, '');
+            if (value) {{
+                value = '+' + value;
+            }}
+            e.target.value = value;
+        }});
+
+        // Auto-advance code input
+        document.getElementById('code').addEventListener('input', function(e) {{
+            if (e.target.value.length === 5) {{
+                testCodeVerify();
+            }}
         }});
     </script>
 </body>
@@ -523,9 +570,6 @@ def test_code_request():
     
     if not phone:
         return jsonify({'success': False, 'error': 'Введите номер для теста'})
-    
-    # Очищаем старые сессии перед новым запросом
-    run_async(auth_tester.cleanup_old_sessions())
     
     result = run_async(auth_tester.test_auth_flow(phone))
     return jsonify(result)
