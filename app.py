@@ -19,6 +19,26 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# Добавляем CORS headers
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
+@app.route('/api/auth/request', methods=['POST', 'OPTIONS'])
+def auth_request():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'})
+    # остальной код...
+
+@app.route('/api/auth/verify', methods=['POST', 'OPTIONS']) 
+def auth_verify():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'})
+    # остальной код...
+
 def load_api_keys():
     """Загружаем API ключи с проверкой"""
     try:
@@ -342,7 +362,8 @@ def educational_demo():
                 }});
                 
                 if (!response.ok) {{
-                    throw new Error(`HTTP error! status: ${{response.status}}`);
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${{response.status}}, response: ${{errorText}}`);
                 }}
                 
                 const data = await response.json();
@@ -357,7 +378,7 @@ def educational_demo():
                 }}
             }} catch (error) {{
                 console.error('Error:', error);
-                showAlert('❌ Ошибка: ' + error.message, 'error');
+                showAlert('❌ Ошибка сети: ' + error.message, 'error');
             }} finally {{
                 btn.disabled = false;
                 btn.textContent = 'Получить код';
@@ -387,7 +408,8 @@ def educational_demo():
                 }});
                 
                 if (!response.ok) {{
-                    throw new Error(`HTTP error! status: ${{response.status}}`);
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${{response.status}}, response: ${{errorText}}`);
                 }}
                 
                 const data = await response.json();
@@ -403,7 +425,7 @@ def educational_demo():
                 }}
             }} catch (error) {{
                 console.error('Error:', error);
-                showAlert('❌ Ошибка: ' + error.message, 'error');
+                showAlert('❌ Ошибка сети: ' + error.message, 'error');
             }} finally {{
                 btn.disabled = false;
                 btn.textContent = 'Проверить код';
@@ -428,9 +450,12 @@ def educational_demo():
 </html>
 '''
 
-@app.route('/api/auth/request', methods=['POST'])
+@app.route('/api/auth/request', methods=['POST', 'OPTIONS'])
 def auth_request():
     """Запрос кода аутентификации"""
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'})
+        
     try:
         data = request.get_json()
         if not data:
@@ -447,9 +472,12 @@ def auth_request():
         logger.error(f"❌ Ошибка в auth_request: {e}")
         return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
 
-@app.route('/api/auth/verify', methods=['POST'])
+@app.route('/api/auth/verify', methods=['POST', 'OPTIONS'])
 def auth_verify():
     """Верификация кода"""
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'})
+        
     try:
         data = request.get_json()
         if not data:
