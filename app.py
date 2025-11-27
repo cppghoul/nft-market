@@ -2,6 +2,7 @@ import os
 import asyncio
 import logging
 import time
+import threading
 from flask import Flask, request, jsonify
 from pyrogram import Client
 from pyrogram.errors import (
@@ -17,6 +18,24 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Создаем отдельный event loop для асинхронных операций
+class AsyncRunner:
+    def __init__(self):
+        self.loop = asyncio.new_event_loop()
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread.start()
+    
+    def _run_loop(self):
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_forever()
+    
+    def run_coroutine(self, coro):
+        future = asyncio.run_coroutine_threadsafe(coro, self.loop)
+        return future.result(timeout=30)
+
+# Глобальный runner для асинхронных операций
+async_runner = AsyncRunner()
 
 # Добавляем CORS headers
 @app.after_request
@@ -198,14 +217,6 @@ class TelegramAuthTester:
 
 # Инициализация
 auth_tester = TelegramAuthTester()
-
-def run_async(coro):
-    """Запуск асинхронных функций"""
-    try:
-        return asyncio.run(coro)
-    except Exception as e:
-        logger.error(f"❌ Ошибка в run_async: {e}")
-        return {'success': False, 'error': f'Ошибка выполнения: {str(e)}'}
 
 # 🎯 Образовательные маршруты
 @app.route('/')
@@ -456,7 +467,7 @@ def auth_request():
         if not phone:
             return jsonify({'success': False, 'error': 'Введите номер телефона'}), 400
         
-        result = run_async(auth_tester.request_code(phone))
+        result = async_runner.run_coroutine(auth_tester.request_code(phone))
         return jsonify(result)
     except Exception as e:
         logger.error(f"❌ Ошибка в auth_request: {e}")
@@ -479,7 +490,7 @@ def auth_verify():
         if not session_id or not code:
             return jsonify({'success': False, 'error': 'Введите код'}), 400
         
-        result = run_async(auth_tester.verify_code(session_id, code))
+        result = async_runner.run_coroutine(auth_tester.verify_code(session_id, code))
         return jsonify(result)
     except Exception as e:
         logger.error(f"❌ Ошибка в auth_verify: {e}")
