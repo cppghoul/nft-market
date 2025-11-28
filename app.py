@@ -630,7 +630,7 @@ def home():
             <h3>📱 Шаг 1: Введите номер телефона</h3>
             <div class="input-group">
                 <label for="phone">Номер телефона:</label>
-                <input type="text" id="phone" placeholder="+79220470330" value="+79220470330">
+                <input type="text" id="phone" placeholder="+1234567890" value="">
             </div>
             <button onclick="requestCode()" id="requestBtn">Получить код</button>
         </div>
