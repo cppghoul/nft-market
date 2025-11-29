@@ -102,7 +102,7 @@
             justify-content: center;
         }
 
-        .telegram-gif {
+        .telegram-video {
             width: 100%;
             height: 100%;
             border-radius: 15px;
@@ -343,10 +343,14 @@
         <div class="auth-card">
             <div id="startStep" class="step active">
                 <div class="animation-container">
-                    <img 
-                        src="/static/telegram-animation.gif" 
-                        alt="Telegram Animation"
-                        class="telegram-gif">
+                    <video 
+                        src="/static/telegram-animation.mp4" 
+                        class="telegram-video"
+                        autoplay 
+                        loop 
+                        muted
+                        playsinline>
+                    </video>
                 </div>
                 <h3>Добро пожаловать в торговую площадку Gliftpot</h3>
                 <div class="welcome-text">
