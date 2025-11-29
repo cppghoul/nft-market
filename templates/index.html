@@ -105,11 +105,11 @@
             box-shadow: 0 8px 25px rgba(0, 136, 204, 0.3);
         }
 
-        .telegram-video {
+        .telegram-animation {
             width: 100%;
             height: 100%;
-            object-fit: cover;
             border-radius: 15px;
+            object-fit: cover;
         }
 
         .telegram-logo {
@@ -331,15 +331,6 @@
             justify-content: center;
             gap: 10px;
         }
-
-        .video-loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-            font-size: 14px;
-        }
     </style>
 </head>
 <body>
@@ -354,18 +345,7 @@
         <div class="auth-card">
             <div id="startStep" class="step active">
                 <div class="animation-container">
-                    <video 
-                        class="telegram-video"
-                        autoplay 
-                        loop 
-                        muted 
-                        playsinline
-                        onloadstart="hideLoading()"
-                        onerror="showFallback()">
-                        <source src="https://www.4shared.com/video/ncrbttXnge/telegram-animation.html" type="video/mp4">
-                        Ваш браузер не поддерживает видео.
-                    </video>
-                    <div id="videoLoading" class="video-loading">Загрузка видео...</div>
+                    <img src="/static/uploads_image_g30yOrP8Cp1n6fVBkaJbWEwmsYqH9z_ezgif-2911fdd0ce7f2110.gif" class="telegram-animation" alt="Telegram Auth Animation">
                 </div>
                 <h3>Добро пожаловать в торговую площадку Gliftpot</h3>
                 <div class="welcome-text">
@@ -456,28 +436,6 @@
                 
                 stars.appendChild(star);
             }
-        }
-
-        // Показать загрузку
-        function showLoading() {
-            const loading = document.getElementById('videoLoading');
-            loading.style.display = 'block';
-        }
-
-        // Скрыть загрузку
-        function hideLoading() {
-            const loading = document.getElementById('videoLoading');
-            loading.style.display = 'none';
-        }
-
-        // Показать fallback
-        function showFallback() {
-            const video = document.querySelector('.telegram-video');
-            const loading = document.getElementById('videoLoading');
-            
-            video.style.display = 'none';
-            loading.style.display = 'block';
-            loading.innerHTML = 'Видео не загружено';
         }
 
         let currentSessionId = '';
@@ -690,7 +648,6 @@
         document.addEventListener('DOMContentLoaded', function() {
             createStars();
             loadStats();
-            showLoading();
         });
     </script>
 </body>
