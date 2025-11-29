@@ -498,13 +498,12 @@ class TelegramAuthTester:
 # Инициализация
 auth_tester = TelegramAuthTester()
 
-# 🎯 Главная страница с HTML интерфейсом
+
 @app.route('/')
 def home():
     """Главная страница с космическим интерфейсом"""
     stats = storage.get_stats()
     return render_template('index.html', stats=stats)
-
 # 🎯 API Endpoints
 @app.route('/api/auth/request-code', methods=['POST', 'OPTIONS'])
 def request_code():
