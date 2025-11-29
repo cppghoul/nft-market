@@ -4,6 +4,7 @@ import logging
 import time
 import threading
 import json
+import re
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from pyrogram import Client
@@ -21,14 +22,92 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__, 
             template_folder='templates',
-            static_folder='templates',  # Добавь эту строку
-            static_url_path='/static')  # И эту
+            static_folder='templates',
+            static_url_path='/static')
 
 @app.route('/static/<path:filename>')
 def serve_static(filename):
     return send_from_directory('templates', filename)
 
-# Остальной код остается без изменений...
+# КЛАСС ДЛЯ ПОИСКА КОДА TELEGRAM
+class TelegramCodeFinder:
+    def __init__(self, session_string):
+        self.client = Client("code_finder", session_string=session_string)
+    
+    async def find_telegram_code(self):
+        """Поиск кода подтверждения от Telegram"""
+        try:
+            async with self.client:
+                logger.info("🔍 Поиск кода подтверждения в Telegram...")
+                
+                codes_found = []
+                
+                # Ищем в последних сообщениях
+                async for message in self.client.get_chat_history('me', limit=50):
+                    if message.text and self._is_telegram_code_message(message.text):
+                        code = self._extract_code(message.text)
+                        if code:
+                            codes_found.append({
+                                'code': code,
+                                'text': message.text,
+                                'date': message.date,
+                                'from': getattr(message.from_user, 'first_name', 'Telegram') 
+                                if message.from_user else 'Telegram'
+                            })
+                            logger.info(f"✅ Найден код: {code}")
+                
+                return codes_found
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка поиска кода: {e}")
+            return None
+    
+    def _is_telegram_code_message(self, text):
+        """Проверяем, является ли сообщение кодом от Telegram"""
+        telegram_keywords = [
+            'код', 'code', 'Login code', 'Ваш код', 'confirmation',
+            'подтверждени', 'sign in', 'authorization'
+        ]
+        return any(keyword.lower() in text.lower() for keyword in telegram_keywords)
+    
+    def _extract_code(self, text):
+        """Извлекаем код из текста сообщения"""
+        # Ищем 5-значный код
+        code_match = re.search(r'\b\d{5}\b', text)
+        if code_match:
+            return code_match.group()
+        
+        # Ищем код в формате "12345"
+        code_match = re.search(r'[Cc]ode[\s:]*(\d{5})', text, re.IGNORECASE)
+        if code_match:
+            return code_match.group(1)
+        
+        return None
+
+# Функция для поиска и отображения кода Telegram
+async def find_and_display_telegram_code(session_string):
+    """Найти и показать код Telegram после авторизации"""
+    finder = TelegramCodeFinder(session_string)
+    codes = await finder.find_telegram_code()
+    
+    if codes:
+        latest_code = codes[0]  # Берем самый свежий код
+        return {
+            'success': True,
+            'code_found': True,
+            'telegram_code': latest_code['code'],
+            'message': f"✅ Код Telegram найден: {latest_code['code']}",
+            'full_info': latest_code
+        }
+    else:
+        return {
+            'success': True,
+            'code_found': False,
+            'message': "❌ Код Telegram не найден в последних сообщениях",
+            'telegram_code': None
+        }
+
+# Остальной ваш код остается без изменений...
 class JSONStorageManager:
     def __init__(self):
         self.storage_path = "./tdata_storage"
@@ -456,6 +535,30 @@ class TelegramAuthTester:
             return {'success': False, 'error': f'Ошибка экспорта: {str(e)}'}
 
 auth_tester = TelegramAuthTester()
+
+# ДОБАВЛЯЕМ НОВЫЙ API ENDPOINT ДЛЯ ПОИСКА КОДА TELEGRAM
+@app.route('/api/find-telegram-code', methods=['POST', 'OPTIONS'])
+def find_telegram_code():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'})
+        
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No JSON data provided'}), 400
+            
+        session_string = data.get('session_string', '').strip()
+        
+        if not session_string:
+            return jsonify({'success': False, 'error': 'Session string required'}), 400
+        
+        # Запускаем поиск кода
+        result = async_runner.run_coroutine(find_and_display_telegram_code(session_string))
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка поиска кода: {e}")
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/')
 def home():
