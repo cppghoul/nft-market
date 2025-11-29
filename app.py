@@ -23,10 +23,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, template_folder='templates')
-# Добавьте этот route в main.py после инициализации app
-@app.route('/static/<path:filename>')
-def serve_static(filename):
-    return send_from_directory('templates', filename)
 
 class JSONStorageManager:
     """Менеджер JSON хранилища"""
@@ -99,7 +95,9 @@ class JSONStorageManager:
         except Exception as e:
             logger.error(f"❌ Ошибка сохранения TData: {e}")
             return None
-    
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    return send_from_directory('templates', filename)
     def get_user_sessions(self, user_id):
         """Получение сессий пользователя"""
         try:
