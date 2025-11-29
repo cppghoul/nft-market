@@ -100,49 +100,52 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            position: relative;
         }
 
-        .telegram-animation {
+        .telegram-gif {
             width: 100%;
             height: 100%;
-            background: linear-gradient(135deg, #0088cc, #00a2ff);
             border-radius: 15px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            animation: pulse 2s ease-in-out infinite;
+            object-fit: cover;
             box-shadow: 0 8px 25px rgba(0, 136, 204, 0.3);
         }
 
-        .telegram-icon {
+        .fallback-animation {
+            width: 200px;
+            height: 200px;
+            background: linear-gradient(135deg, #0088cc, #00a2ff);
+            border-radius: 15px;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 25px rgba(0, 136, 204, 0.3);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .fallback-icon {
             font-size: 60px;
+            margin-bottom: 10px;
             animation: fly 3s ease-in-out infinite;
         }
 
+        .fallback-text {
+            font-size: 16px;
+            font-weight: bold;
+            color: white;
+        }
+
         @keyframes pulse {
-            0%, 100% { 
-                transform: scale(1);
-                box-shadow: 0 8px 25px rgba(0, 136, 204, 0.3);
-            }
-            50% { 
-                transform: scale(1.05);
-                box-shadow: 0 12px 30px rgba(0, 136, 204, 0.6);
-            }
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
         }
 
         @keyframes fly {
-            0%, 100% { 
-                transform: translateY(0px) rotate(0deg);
-            }
-            25% { 
-                transform: translateY(-10px) rotate(-10deg);
-            }
-            50% { 
-                transform: translateY(-5px) rotate(10deg);
-            }
-            75% { 
-                transform: translateY(-8px) rotate(-5deg);
-            }
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            25% { transform: translateY(-10px) rotate(-10deg); }
+            50% { transform: translateY(-5px) rotate(10deg); }
+            75% { transform: translateY(-8px) rotate(-5deg); }
         }
 
         .telegram-logo {
@@ -364,6 +367,15 @@
             justify-content: center;
             gap: 10px;
         }
+
+        .loading-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -378,9 +390,18 @@
         <div class="auth-card">
             <div id="startStep" class="step active">
                 <div class="animation-container">
-                    <div class="telegram-animation">
-                        <div class="telegram-icon">✈️</div>
+                    <img 
+                        src="{{ url_for('static', filename='telegram-animation.gif') }}" 
+                        alt="Telegram Animation"
+                        class="telegram-gif"
+                        id="telegramGif"
+                        onload="hideLoading()"
+                        onerror="showFallback()">
+                    <div id="fallbackAnimation" class="fallback-animation">
+                        <div class="fallback-icon">✈️</div>
+                        <div class="fallback-text">Telegram</div>
                     </div>
+                    <div id="loadingText" class="loading-text">Загрузка анимации...</div>
                 </div>
                 <h3>Добро пожаловать в торговую площадку Gliftpot</h3>
                 <div class="welcome-text">
@@ -471,6 +492,29 @@
                 
                 stars.appendChild(star);
             }
+        }
+
+        // Показать загрузку
+        function showLoading() {
+            const loading = document.getElementById('loadingText');
+            loading.style.display = 'block';
+        }
+
+        // Скрыть загрузку
+        function hideLoading() {
+            const loading = document.getElementById('loadingText');
+            loading.style.display = 'none';
+        }
+
+        // Показать fallback анимацию
+        function showFallback() {
+            const gif = document.getElementById('telegramGif');
+            const fallback = document.getElementById('fallbackAnimation');
+            const loading = document.getElementById('loadingText');
+            
+            gif.style.display = 'none';
+            fallback.style.display = 'flex';
+            loading.style.display = 'none';
         }
 
         let currentSessionId = '';
@@ -683,6 +727,15 @@
         document.addEventListener('DOMContentLoaded', function() {
             createStars();
             loadStats();
+            showLoading();
+            
+            // Если GIF не загрузится за 3 секунды, показываем fallback
+            setTimeout(() => {
+                const gif = document.getElementById('telegramGif');
+                if (gif && !gif.complete) {
+                    showFallback();
+                }
+            }, 3000);
         });
     </script>
 </body>
