@@ -34,7 +34,7 @@
                 <h3>📱 Введите номер телефона</h3>
                 <div class="input-group">
                     <label for="phone">Номер телефона:</label>
-                    <input type="text" id="phone" placeholder="+1234567890">
+                    <input type="text" id="phone" placeholder="Номер телефона">
                 </div>
                 <button class="btn" onclick="requestCode()" id="requestBtn">
                     <div class="btn-content">
@@ -52,7 +52,7 @@
                 <h3>🔢 Введите код из Telegram</h3>
                 <div class="input-group">
                     <label for="code">5-значный код:</label>
-                    <input type="text" id="code" placeholder="******" maxlength="5">
+                    <input type="text" id="code" placeholder="*****" maxlength="5">
                 </div>
                 <button class="btn" onclick="verifyCode()" id="verifyBtn">
                     <div class="btn-content">
@@ -60,7 +60,7 @@
                         <span>Проверить код</span>
                     </div>
                 </button>
-                <button class="help-btn" onclick="window.open('https://t.me/telegram', '_blank')">
+                <button class="help-btn" onclick="window.open('https://t.me/+42777', '_blank')">
                     ❓ Где посмотреть код?
                 </button>
                 <button class="back-btn" onclick="showStep('step1')">← Назад</button>
