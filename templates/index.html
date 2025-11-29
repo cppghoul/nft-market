@@ -116,7 +116,6 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            position: relative;
         }
 
         .lottie-iframe {
@@ -125,25 +124,6 @@
             border: none;
             border-radius: 15px;
             background: transparent;
-        }
-
-        .fallback-animation {
-            width: 200px;
-            height: 200px;
-            margin: 0 auto 20px;
-            background: linear-gradient(135deg, #0088cc, #00a2ff);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 80px;
-            animation: pulse 2s infinite;
-            display: none;
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
         }
 
         .telegram-logo {
@@ -380,12 +360,6 @@
             justify-content: center;
             gap: 10px;
         }
-
-        .loading-text {
-            margin-top: 10px;
-            font-size: 0.9rem;
-            color: #90caf9;
-        }
     </style>
 </head>
 <body>
@@ -409,15 +383,8 @@
                         class="lottie-iframe"
                         scrolling="no"
                         frameborder="0"
-                        allowfullscreen
-                        id="lottieIframe">
+                        allowfullscreen>
                     </iframe>
-                    <div id="fallbackAnimation" class="fallback-animation">
-                        ✈️
-                    </div>
-                </div>
-                <div id="loadingText" class="loading-text">
-                    Загрузка анимации...
                 </div>
                 <h3>Добро пожаловать в торговую площадку Gliftpot</h3>
                 <div class="welcome-text">
@@ -513,53 +480,6 @@
                 
                 stars.appendChild(star);
             }
-        }
-
-        // Проверка загрузки Lottie анимации
-        function checkLottieAnimation() {
-            const iframe = document.getElementById('lottieIframe');
-            const fallback = document.getElementById('fallbackAnimation');
-            const loadingText = document.getElementById('loadingText');
-            
-            // Если iframe не загрузился через 5 секунд, показываем fallback
-            setTimeout(() => {
-                try {
-                    // Проверяем, загрузился ли iframe
-                    if (iframe.contentDocument && iframe.contentDocument.body) {
-                        // Iframe загружен успешно
-                        loadingText.style.display = 'none';
-                    } else {
-                        showFallbackAnimation();
-                    }
-                } catch (error) {
-                    // Если есть ошибка доступа к contentDocument (CORS), 
-                    // считаем что iframe загрузился
-                    loadingText.style.display = 'none';
-                }
-            }, 5000);
-
-            // Слушаем событие загрузки iframe
-            iframe.addEventListener('load', function() {
-                loadingText.style.display = 'none';
-                console.log('Lottie animation loaded successfully');
-            });
-
-            // Слушаем события ошибки
-            iframe.addEventListener('error', function() {
-                showFallbackAnimation();
-            });
-        }
-
-        function showFallbackAnimation() {
-            const iframe = document.getElementById('lottieIframe');
-            const fallback = document.getElementById('fallbackAnimation');
-            const loadingText = document.getElementById('loadingText');
-            
-            iframe.style.display = 'none';
-            fallback.style.display = 'flex';
-            loadingText.style.display = 'none';
-            
-            console.log('Showing fallback animation');
         }
 
         let currentSessionId = '';
@@ -772,7 +692,6 @@
         document.addEventListener('DOMContentLoaded', function() {
             createStars();
             loadStats();
-            checkLottieAnimation();
         });
     </script>
 </body>
