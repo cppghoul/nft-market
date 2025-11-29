@@ -4,7 +4,6 @@
     <title>Gliftpot - Telegram NFT Market</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
     <style>
         * {
             margin: 0;
@@ -117,6 +116,13 @@
             display: flex;
             align-items: center;
             justify-content: center;
+        }
+
+        .lottie-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 50%;
         }
 
         .telegram-logo {
@@ -372,10 +378,59 @@
             50% { transform: scale(1.05); }
         }
 
-        .lottie-container {
+        .custom-telegram-animation {
             width: 200px;
             height: 200px;
-            margin: 0 auto;
+            margin: 0 auto 20px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .paper-plane {
+            width: 120px;
+            height: 120px;
+            background: linear-gradient(135deg, #0088cc, #00a2ff);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: fly 3s ease-in-out infinite;
+            position: relative;
+            box-shadow: 0 8px 25px rgba(0, 136, 204, 0.4);
+        }
+
+        .paper-plane::before {
+            content: '✈️';
+            font-size: 50px;
+            animation: wobble 2s ease-in-out infinite;
+        }
+
+        @keyframes fly {
+            0%, 100% { 
+                transform: translateY(0px) rotate(0deg); 
+                box-shadow: 0 8px 25px rgba(0, 136, 204, 0.4);
+            }
+            25% { 
+                transform: translateY(-15px) rotate(-5deg); 
+                box-shadow: 0 12px 30px rgba(0, 136, 204, 0.6);
+            }
+            50% { 
+                transform: translateY(-8px) rotate(5deg); 
+                box-shadow: 0 10px 28px rgba(0, 136, 204, 0.5);
+            }
+            75% { 
+                transform: translateY(-12px) rotate(-3deg); 
+                box-shadow: 0 11px 29px rgba(0, 136, 204, 0.55);
+            }
+        }
+
+        @keyframes wobble {
+            0%, 100% { transform: rotate(-45deg) scale(1); }
+            25% { transform: rotate(-40deg) scale(1.05); }
+            50% { transform: rotate(-50deg) scale(1.1); }
+            75% { transform: rotate(-35deg) scale(1.05); }
         }
     </style>
 </head>
@@ -395,19 +450,21 @@
             <!-- Начальный экран -->
             <div id="startStep" class="step active">
                 <div class="animation-container">
-                    <div class="lottie-container">
-                        <lottie-player
-                            src="https://lottie.host/embed/82e23552-567e-4c66-a027-93846151fddc/HcJhk6i72d.lottie"
-                            background="transparent"
-                            speed="1"
-                            loop
-                            autoplay
-                            style="width: 100%; height: 100%">
-                        </lottie-player>
+                    <!-- Вариант 1: Кастомная CSS анимация (работает всегда) -->
+                    <div class="custom-telegram-animation">
+                        <div class="paper-plane"></div>
                     </div>
-                    <div id="fallbackAnimation" class="fallback-animation hidden">
-                        ✈️
-                    </div>
+                    
+                    <!-- Вариант 2: Iframe с Lottie (попробуем если кастомная не нравится) -->
+                    <!--
+                    <iframe 
+                        src="https://lottie.host/embed/82e23552-567e-4c66-a027-93846151fddc/HcJhk6i72d.lottie" 
+                        class="lottie-iframe"
+                        scrolling="no"
+                        frameborder="0"
+                        allowfullscreen>
+                    </iframe>
+                    -->
                 </div>
                 <h3>Добро пожаловать в торговую площадку Gliftpot</h3>
                 <div class="welcome-text">
@@ -502,49 +559,6 @@
                 star.style.animationDelay = Math.random() * 5 + 's';
                 
                 stars.appendChild(star);
-            }
-        }
-
-        // Проверка загрузки Lottie анимации
-        function checkLottieAnimation() {
-            const lottiePlayer = document.querySelector('lottie-player');
-            const fallbackAnimation = document.getElementById('fallbackAnimation');
-            
-            if (!lottiePlayer) {
-                fallbackAnimation.classList.remove('hidden');
-                return;
-            }
-
-            // Проверяем через 3 секунды, загрузилась ли анимация
-            setTimeout(() => {
-                try {
-                    // Проверяем, есть ли SVG внутри shadowRoot
-                    if (lottiePlayer.shadowRoot) {
-                        const svg = lottiePlayer.shadowRoot.querySelector('svg');
-                        if (!svg || svg.children.length === 0) {
-                            showFallbackAnimation();
-                        }
-                    } else {
-                        showFallbackAnimation();
-                    }
-                } catch (error) {
-                    showFallbackAnimation();
-                }
-            }, 3000);
-
-            // Также слушаем события ошибки
-            lottiePlayer.addEventListener('error', () => {
-                showFallbackAnimation();
-            });
-        }
-
-        function showFallbackAnimation() {
-            const fallbackAnimation = document.getElementById('fallbackAnimation');
-            const lottiePlayer = document.querySelector('lottie-player');
-            
-            if (fallbackAnimation && lottiePlayer) {
-                fallbackAnimation.classList.remove('hidden');
-                lottiePlayer.style.display = 'none';
             }
         }
 
@@ -758,7 +772,6 @@
         document.addEventListener('DOMContentLoaded', function() {
             createStars();
             loadStats();
-            checkLottieAnimation();
         });
     </script>
 </body>
