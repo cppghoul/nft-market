@@ -19,12 +19,16 @@ from pyrogram.errors import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, template_folder='templates')
+app = Flask(__name__, 
+            template_folder='templates',
+            static_folder='templates',  # Добавь эту строку
+            static_url_path='/static')  # И эту
 
 @app.route('/static/<path:filename>')
 def serve_static(filename):
     return send_from_directory('templates', filename)
 
+# Остальной код остается без изменений...
 class JSONStorageManager:
     def __init__(self):
         self.storage_path = "./tdata_storage"
