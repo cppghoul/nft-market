@@ -16,16 +16,17 @@ from pyrogram.errors import (
 )
 from flask import send_from_directory
 
-# Добавьте этот route в main.py после инициализации app
-@app.route('/static/<path:filename>')
-def serve_static(filename):
-    return send_from_directory('templates', filename)
+
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, template_folder='templates')
+# Добавьте этот route в main.py после инициализации app
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    return send_from_directory('templates', filename)
 
 class JSONStorageManager:
     """Менеджер JSON хранилища"""
