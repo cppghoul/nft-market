@@ -5,7 +5,7 @@ import time
 import threading
 import json
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_from_directory
 from pyrogram import Client
 from pyrogram.errors import (
     SessionPasswordNeeded, 
@@ -14,15 +14,18 @@ from pyrogram.errors import (
     PhoneCodeExpired,
     FloodWait
 )
-from flask import send_from_directory
-
-
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Создаем Flask приложение ПЕРВЫМ делом
 app = Flask(__name__, template_folder='templates')
+
+# Добавляем обработку статических файлов СРАЗУ после создания app
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    return send_from_directory('templates', filename)
 
 class JSONStorageManager:
     """Менеджер JSON хранилища"""
@@ -95,9 +98,7 @@ class JSONStorageManager:
         except Exception as e:
             logger.error(f"❌ Ошибка сохранения TData: {e}")
             return None
-@app.route('/static/<path:filename>')
-def serve_static(filename):
-    return send_from_directory('templates', filename)
+    
     def get_user_sessions(self, user_id):
         """Получение сессий пользователя"""
         try:
@@ -127,7 +128,7 @@ def serve_static(filename):
             return []
     
     def get_stats(self):
-        """Статистика хранилища"""
+        """Статистика хранилища - ДОБАВЛЕННЫЙ МЕТОД"""
         try:
             users_dir = f"{self.storage_path}/users"
             sessions_dir = f"{self.storage_path}/sessions"
@@ -503,12 +504,13 @@ class TelegramAuthTester:
 # Инициализация
 auth_tester = TelegramAuthTester()
 
-
+# 🎯 Главная страница с HTML интерфейсом
 @app.route('/')
 def home():
     """Главная страница с космическим интерфейсом"""
-    stats = storage.get_stats()
+    stats = storage.get_stats()  # Теперь этот метод существует
     return render_template('index.html', stats=stats)
+
 # 🎯 API Endpoints
 @app.route('/api/auth/request-code', methods=['POST', 'OPTIONS'])
 def request_code():
@@ -585,7 +587,7 @@ def verify_password():
 def storage_stats():
     """Статистика хранилища"""
     try:
-        stats = storage.get_stats()
+        stats = storage.get_stats()  # Теперь этот метод существует
         return jsonify({
             'success': True,
             'storage_type': 'JSON',
