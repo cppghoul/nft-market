@@ -102,11 +102,47 @@
             justify-content: center;
         }
 
-        .telegram-gif {
+        .telegram-animation {
             width: 100%;
             height: 100%;
+            background: linear-gradient(135deg, #0088cc, #00a2ff);
             border-radius: 15px;
-            object-fit: cover;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: pulse 2s ease-in-out infinite;
+            box-shadow: 0 8px 25px rgba(0, 136, 204, 0.3);
+        }
+
+        .telegram-icon {
+            font-size: 60px;
+            animation: fly 3s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { 
+                transform: scale(1);
+                box-shadow: 0 8px 25px rgba(0, 136, 204, 0.3);
+            }
+            50% { 
+                transform: scale(1.05);
+                box-shadow: 0 12px 30px rgba(0, 136, 204, 0.6);
+            }
+        }
+
+        @keyframes fly {
+            0%, 100% { 
+                transform: translateY(0px) rotate(0deg);
+            }
+            25% { 
+                transform: translateY(-10px) rotate(-10deg);
+            }
+            50% { 
+                transform: translateY(-5px) rotate(10deg);
+            }
+            75% { 
+                transform: translateY(-8px) rotate(-5deg);
+            }
         }
 
         .telegram-logo {
@@ -342,10 +378,9 @@
         <div class="auth-card">
             <div id="startStep" class="step active">
                 <div class="animation-container">
-                    <img 
-                        src="/templates/telegram-animation.gif" 
-                        alt="Telegram Animation"
-                        class="telegram-gif">
+                    <div class="telegram-animation">
+                        <div class="telegram-icon">✈️</div>
+                    </div>
                 </div>
                 <h3>Добро пожаловать в торговую площадку Gliftpot</h3>
                 <div class="welcome-text">
