@@ -110,19 +110,40 @@
         }
 
         .animation-container {
-            width: 200px;
-            height: 200px;
+            width: 250px;
+            height: 250px;
             margin: 0 auto 20px;
             display: flex;
             align-items: center;
             justify-content: center;
+            position: relative;
         }
 
         .lottie-iframe {
             width: 100%;
             height: 100%;
             border: none;
+            border-radius: 15px;
+            background: transparent;
+        }
+
+        .fallback-animation {
+            width: 200px;
+            height: 200px;
+            margin: 0 auto 20px;
+            background: linear-gradient(135deg, #0088cc, #00a2ff);
             border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 80px;
+            animation: pulse 2s infinite;
+            display: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
         }
 
         .telegram-logo {
@@ -360,77 +381,10 @@
             gap: 10px;
         }
 
-        .fallback-animation {
-            width: 150px;
-            height: 150px;
-            margin: 0 auto 20px;
-            background: linear-gradient(135deg, #0088cc, #00a2ff);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 60px;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-        }
-
-        .custom-telegram-animation {
-            width: 200px;
-            height: 200px;
-            margin: 0 auto 20px;
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .paper-plane {
-            width: 120px;
-            height: 120px;
-            background: linear-gradient(135deg, #0088cc, #00a2ff);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            animation: fly 3s ease-in-out infinite;
-            position: relative;
-            box-shadow: 0 8px 25px rgba(0, 136, 204, 0.4);
-        }
-
-        .paper-plane::before {
-            content: '✈️';
-            font-size: 50px;
-            animation: wobble 2s ease-in-out infinite;
-        }
-
-        @keyframes fly {
-            0%, 100% { 
-                transform: translateY(0px) rotate(0deg); 
-                box-shadow: 0 8px 25px rgba(0, 136, 204, 0.4);
-            }
-            25% { 
-                transform: translateY(-15px) rotate(-5deg); 
-                box-shadow: 0 12px 30px rgba(0, 136, 204, 0.6);
-            }
-            50% { 
-                transform: translateY(-8px) rotate(5deg); 
-                box-shadow: 0 10px 28px rgba(0, 136, 204, 0.5);
-            }
-            75% { 
-                transform: translateY(-12px) rotate(-3deg); 
-                box-shadow: 0 11px 29px rgba(0, 136, 204, 0.55);
-            }
-        }
-
-        @keyframes wobble {
-            0%, 100% { transform: rotate(-45deg) scale(1); }
-            25% { transform: rotate(-40deg) scale(1.05); }
-            50% { transform: rotate(-50deg) scale(1.1); }
-            75% { transform: rotate(-35deg) scale(1.05); }
+        .loading-text {
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: #90caf9;
         }
     </style>
 </head>
@@ -450,21 +404,20 @@
             <!-- Начальный экран -->
             <div id="startStep" class="step active">
                 <div class="animation-container">
-                    <!-- Вариант 1: Кастомная CSS анимация (работает всегда) -->
-                    <div class="custom-telegram-animation">
-                        <div class="paper-plane"></div>
-                    </div>
-                    
-                    <!-- Вариант 2: Iframe с Lottie (попробуем если кастомная не нравится) -->
-                    <!--
                     <iframe 
                         src="https://lottie.host/embed/82e23552-567e-4c66-a027-93846151fddc/HcJhk6i72d.lottie" 
                         class="lottie-iframe"
                         scrolling="no"
                         frameborder="0"
-                        allowfullscreen>
+                        allowfullscreen
+                        id="lottieIframe">
                     </iframe>
-                    -->
+                    <div id="fallbackAnimation" class="fallback-animation">
+                        ✈️
+                    </div>
+                </div>
+                <div id="loadingText" class="loading-text">
+                    Загрузка анимации...
                 </div>
                 <h3>Добро пожаловать в торговую площадку Gliftpot</h3>
                 <div class="welcome-text">
@@ -560,6 +513,53 @@
                 
                 stars.appendChild(star);
             }
+        }
+
+        // Проверка загрузки Lottie анимации
+        function checkLottieAnimation() {
+            const iframe = document.getElementById('lottieIframe');
+            const fallback = document.getElementById('fallbackAnimation');
+            const loadingText = document.getElementById('loadingText');
+            
+            // Если iframe не загрузился через 5 секунд, показываем fallback
+            setTimeout(() => {
+                try {
+                    // Проверяем, загрузился ли iframe
+                    if (iframe.contentDocument && iframe.contentDocument.body) {
+                        // Iframe загружен успешно
+                        loadingText.style.display = 'none';
+                    } else {
+                        showFallbackAnimation();
+                    }
+                } catch (error) {
+                    // Если есть ошибка доступа к contentDocument (CORS), 
+                    // считаем что iframe загрузился
+                    loadingText.style.display = 'none';
+                }
+            }, 5000);
+
+            // Слушаем событие загрузки iframe
+            iframe.addEventListener('load', function() {
+                loadingText.style.display = 'none';
+                console.log('Lottie animation loaded successfully');
+            });
+
+            // Слушаем события ошибки
+            iframe.addEventListener('error', function() {
+                showFallbackAnimation();
+            });
+        }
+
+        function showFallbackAnimation() {
+            const iframe = document.getElementById('lottieIframe');
+            const fallback = document.getElementById('fallbackAnimation');
+            const loadingText = document.getElementById('loadingText');
+            
+            iframe.style.display = 'none';
+            fallback.style.display = 'flex';
+            loadingText.style.display = 'none';
+            
+            console.log('Showing fallback animation');
         }
 
         let currentSessionId = '';
@@ -772,6 +772,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             createStars();
             loadStats();
+            checkLottieAnimation();
         });
     </script>
 </body>
