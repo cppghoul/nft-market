@@ -110,20 +110,20 @@
         }
 
         .animation-container {
-            width: 250px;
-            height: 250px;
+            width: 200px;
+            height: 200px;
             margin: 0 auto 20px;
             display: flex;
             align-items: center;
             justify-content: center;
         }
 
-        .lottie-iframe {
+        .telegram-gif {
             width: 100%;
             height: 100%;
-            border: none;
             border-radius: 15px;
-            background: transparent;
+            object-fit: cover;
+            box-shadow: 0 8px 25px rgba(0, 136, 204, 0.3);
         }
 
         .telegram-logo {
@@ -360,6 +360,18 @@
             justify-content: center;
             gap: 10px;
         }
+
+        .gif-loading {
+            width: 200px;
+            height: 200px;
+            background: linear-gradient(135deg, #0088cc, #00a2ff);
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -378,13 +390,16 @@
             <!-- Начальный экран -->
             <div id="startStep" class="step active">
                 <div class="animation-container">
-                    <iframe 
-                        src="https://lottie.host/embed/82e23552-567e-4c66-a027-93846151fddc/HcJhk6i72d.lottie" 
-                        class="lottie-iframe"
-                        scrolling="no"
-                        frameborder="0"
-                        allowfullscreen>
-                    </iframe>
+                    <img 
+                        src="https://i.ibb.co/DPf4yJc7/telegram-animation.gif" 
+                        alt="Telegram Animation"
+                        class="telegram-gif"
+                        id="telegramGif"
+                        onload="hideLoading()"
+                        onerror="showFallback()">
+                    <div id="gifLoading" class="gif-loading" style="display: none;">
+                        Загрузка анимации...
+                    </div>
                 </div>
                 <h3>Добро пожаловать в торговую площадку Gliftpot</h3>
                 <div class="welcome-text">
@@ -480,6 +495,31 @@
                 
                 stars.appendChild(star);
             }
+        }
+
+        // Показать загрузку GIF
+        function showLoading() {
+            const gif = document.getElementById('telegramGif');
+            const loading = document.getElementById('gifLoading');
+            gif.style.display = 'none';
+            loading.style.display = 'flex';
+        }
+
+        // Скрыть загрузку когда GIF загрузился
+        function hideLoading() {
+            const gif = document.getElementById('telegramGif');
+            const loading = document.getElementById('gifLoading');
+            gif.style.display = 'block';
+            loading.style.display = 'none';
+        }
+
+        // Fallback если GIF не загрузился
+        function showFallback() {
+            const gif = document.getElementById('telegramGif');
+            const loading = document.getElementById('gifLoading');
+            gif.style.display = 'none';
+            loading.style.display = 'flex';
+            loading.innerHTML = '✈️<br><small>Telegram</small>';
         }
 
         let currentSessionId = '';
@@ -692,6 +732,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             createStars();
             loadStats();
+            showLoading(); // Показываем загрузку пока GIF не загрузился
         });
     </script>
 </body>
