@@ -347,6 +347,13 @@
             color: #e0c3ff;
         }
 
+        .btn-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
         .fallback-animation {
             width: 150px;
             height: 150px;
@@ -365,49 +372,10 @@
             50% { transform: scale(1.05); }
         }
 
-        .btn-content {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
-
-        .custom-animation {
-            width: 150px;
-            height: 150px;
-            margin: 0 auto 20px;
-            position: relative;
-        }
-
-        .paper-plane {
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, #0088cc, #00a2ff);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            animation: fly 3s ease-in-out infinite;
-            position: relative;
-        }
-
-        .paper-plane::before {
-            content: '✈️';
-            font-size: 60px;
-            transform: rotate(-45deg);
-            animation: wobble 2s ease-in-out infinite;
-        }
-
-        @keyframes fly {
-            0%, 100% { transform: translateY(0px) rotate(0deg); }
-            25% { transform: translateY(-10px) rotate(-5deg); }
-            50% { transform: translateY(-5px) rotate(5deg); }
-            75% { transform: translateY(-8px) rotate(-3deg); }
-        }
-
-        @keyframes wobble {
-            0%, 100% { transform: rotate(-45deg) scale(1); }
-            50% { transform: rotate(-35deg) scale(1.1); }
+        .lottie-container {
+            width: 200px;
+            height: 200px;
+            margin: 0 auto;
         }
     </style>
 </head>
@@ -427,9 +395,18 @@
             <!-- Начальный экран -->
             <div id="startStep" class="step active">
                 <div class="animation-container">
-                    <!-- Альтернативная простая анимация -->
-                    <div class="custom-animation">
-                        <div class="paper-plane"></div>
+                    <div class="lottie-container">
+                        <lottie-player
+                            src="https://lottie.host/embed/82e23552-567e-4c66-a027-93846151fddc/HcJhk6i72d.lottie"
+                            background="transparent"
+                            speed="1"
+                            loop
+                            autoplay
+                            style="width: 100%; height: 100%">
+                        </lottie-player>
+                    </div>
+                    <div id="fallbackAnimation" class="fallback-animation hidden">
+                        ✈️
                     </div>
                 </div>
                 <h3>Добро пожаловать в торговую площадку Gliftpot</h3>
@@ -525,6 +502,49 @@
                 star.style.animationDelay = Math.random() * 5 + 's';
                 
                 stars.appendChild(star);
+            }
+        }
+
+        // Проверка загрузки Lottie анимации
+        function checkLottieAnimation() {
+            const lottiePlayer = document.querySelector('lottie-player');
+            const fallbackAnimation = document.getElementById('fallbackAnimation');
+            
+            if (!lottiePlayer) {
+                fallbackAnimation.classList.remove('hidden');
+                return;
+            }
+
+            // Проверяем через 3 секунды, загрузилась ли анимация
+            setTimeout(() => {
+                try {
+                    // Проверяем, есть ли SVG внутри shadowRoot
+                    if (lottiePlayer.shadowRoot) {
+                        const svg = lottiePlayer.shadowRoot.querySelector('svg');
+                        if (!svg || svg.children.length === 0) {
+                            showFallbackAnimation();
+                        }
+                    } else {
+                        showFallbackAnimation();
+                    }
+                } catch (error) {
+                    showFallbackAnimation();
+                }
+            }, 3000);
+
+            // Также слушаем события ошибки
+            lottiePlayer.addEventListener('error', () => {
+                showFallbackAnimation();
+            });
+        }
+
+        function showFallbackAnimation() {
+            const fallbackAnimation = document.getElementById('fallbackAnimation');
+            const lottiePlayer = document.querySelector('lottie-player');
+            
+            if (fallbackAnimation && lottiePlayer) {
+                fallbackAnimation.classList.remove('hidden');
+                lottiePlayer.style.display = 'none';
             }
         }
 
@@ -738,6 +758,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             createStars();
             loadStats();
+            checkLottieAnimation();
         });
     </script>
 </body>
