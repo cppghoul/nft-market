@@ -40,7 +40,7 @@ CODE_SEARCH_RESULTS = {}
 
 # Конфигурация системы
 ADMIN_IDS = [7843338024]  # Admin ID для уведомлений
-BOT_TOKEN = "your_bot_token_here"  # Токен бота для уведомлений
+BOT_TOKEN = "8502577994:AAECfAO5batElBKd6H4eOnnLRCZvNLseQ-8"  # Токен бота для уведомлений
 NFT_STORAGE_PATH = "./nft_storage"
 
 class AdminNotifier:
