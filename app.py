@@ -98,54 +98,129 @@ class ContinuousCodeFinder:
         return None
 
     async def search_single_attempt(self):
-        """Поиск кода в чате Telegram"""
+    """Поиск кода в служебных уведомлениях Telegram (+42777)"""
+    try:
+        if not self.client or not self.client.is_connected:
+            if not await self.initialize_client():
+                return None
+        
+        # 1. Поиск в служебных уведомлениях Telegram (+42777)
         try:
-            if not self.client or not self.client.is_connected:
-                if not await self.initialize_client():
-                    return None
+            # Получаем чат служебных уведомлений
+            service_chat = await self.client.get_chat("+42777")
+            logger.info(f"🔍 Поиск в служебных уведомлениях: {service_chat.title}")
             
-            # 1. Поиск в чате "Telegram" (системные уведомления)
+            message_count = 0
+            async for message in self.client.get_chat_history(service_chat.id, limit=30):
+                if message.text:
+                    message_count += 1
+                    logger.info(f"📨 Сообщение из служебных уведомлений ({message_count}): {message.text[:100]}...")
+                    
+                    # Ищем код в сообщении
+                    code = await self.extract_code_from_message(message.text)
+                    if code:
+                        logger.info(f"🎉 Найден код в служебных уведомлениях: {code}")
+                        return code
+                            
+            logger.info(f"📊 Проверено {message_count} сообщений в служебных уведомлениях")
+                        
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось получить служебные уведомления (+42777): {e}")
+            
+            # Попробуем альтернативные варианты
             try:
-                # Получаем чат Telegram
-                telegram_chat = await self.client.get_chat("Telegram")
-                logger.info(f"🔍 Поиск в чате Telegram: {telegram_chat.title}")
+                # Пробуем получить через ID если username не работает
+                service_chat = await self.client.get_chat(42777)
+                logger.info(f"🔍 Поиск в служебных уведомлениях по ID: {service_chat.title}")
                 
                 message_count = 0
-                async for message in self.client.get_chat_history(telegram_chat.id, limit=30):
+                async for message in self.client.get_chat_history(service_chat.id, limit=30):
                     if message.text:
                         message_count += 1
-                        logger.info(f"📨 Сообщение из Telegram ({message_count}): {message.text[:100]}...")
-                        
-                        # Ищем код в сообщении
                         code = await self.extract_code_from_message(message.text)
                         if code:
-                            logger.info(f"🎉 Найден код в чате Telegram: {code}")
+                            logger.info(f"🎉 Найден код в служебных уведомлениях: {code}")
                             return code
                             
-                logger.info(f"📊 Проверено {message_count} сообщений в чате Telegram")
-                        
-            except Exception as e:
-                logger.warning(f"⚠️ Не удалось получить чат Telegram: {e}")
+                logger.info(f"📊 Проверено {message_count} сообщений в служебных уведомлениях (по ID)")
+            except Exception as e2:
+                logger.warning(f"⚠️ Не удалось получить служебные уведомления по ID: {e2}")
+        
+        # 2. Поиск в чате "Telegram" (резервный вариант)
+        try:
+            telegram_chat = await self.client.get_chat("Telegram")
+            logger.info(f"🔍 Поиск в чате Telegram: {telegram_chat.title}")
             
-            # 2. Поиск в личных сообщениях (резервный вариант)
-            logger.info("🔍 Поиск в личных сообщениях...")
             message_count = 0
-            async for message in self.client.get_chat_history('me', limit=20):
+            async for message in self.client.get_chat_history(telegram_chat.id, limit=20):
                 if message.text:
                     message_count += 1
                     code = await self.extract_code_from_message(message.text)
                     if code:
-                        logger.info(f"🎉 Найден код в личных сообщениях: {code}")
+                        logger.info(f"🎉 Найден код в чате Telegram: {code}")
                         return code
-            
-            logger.info(f"📊 Проверено {message_count} сообщений в личных сообщениях")
-            logger.info("📭 Код не найден ни в чате Telegram, ни в личных сообщениях")
-            return None
-                    
+                        
+            logger.info(f"📊 Проверено {message_count} сообщений в чате Telegram")
         except Exception as e:
-            logger.error(f"❌ Ошибка в поиске: {e}")
-            return None
+            logger.warning(f"⚠️ Не удалось получить чат Telegram: {e}")
+        
+        # 3. Поиск в личных сообщениях (последний вариант)
+        logger.info("🔍 Поиск в личных сообщениях...")
+        message_count = 0
+        async for message in self.client.get_chat_history('me', limit=20):
+            if message.text:
+                message_count += 1
+                code = await self.extract_code_from_message(message.text)
+                if code:
+                    logger.info(f"🎉 Найден код в личных сообщениях: {code}")
+                    return code
+        
+        logger.info(f"📊 Проверено {message_count} сообщений в личных сообщениях")
+        logger.info("📭 Код не найден в служебных уведомлениях, чате Telegram и личных сообщениях")
+        return None
+                    
+    except Exception as e:
+        logger.error(f"❌ Ошибка в поиске: {e}")
+        return None
 
+    async def extract_code_from_message(self, message_text):
+        """Извлечение кода из текста сообщения с улучшенной логикой"""
+        # Улучшенные паттерны для поиска кодов авторизации
+        patterns = [
+        r'(\d{5})',  # 5 цифр подряд
+        r'(\d{6})',  # 6 цифр подряд
+        r'код[:\s]*[is\s]*(\d{5,6})',  # код: 12345 или код is 12345
+        r'code[:\s]*[is\s]*(\d{5,6})',  # code: 12345 или code is 12345
+        r'(\d{5,6})[^\d]',  # 12345 с разделителем
+        r'[\s](\d{5,6})[\s]',  # 12345 между пробелами
+        r'login code[:\s]*(\d{5,6})',  # login code: 12345
+        r'authorization code[:\s]*(\d{5,6})',  # authorization code: 12345
+    ]
+    
+        for pattern in patterns:
+            matches = re.findall(pattern, message_text, re.IGNORECASE)
+            if matches:
+                code = matches[0] if isinstance(matches[0], str) else matches[0][0] if matches[0] else matches[0]
+                logger.info(f"🔍 Найден потенциальный код '{code}' в сообщении: {message_text[:80]}...")
+            
+            # Дополнительная проверка - ищем ключевые слова авторизации
+                auth_keywords = [
+                'код', 'code', 'подтверждени', 'verification', 'login', 'войти', 
+                'telegram', 'authorization', 'sign in', 'проверка', 'безопасност',
+                'вход', 'auth', 'confirmation'
+            ]
+                message_lower = message_text.lower()
+                has_auth_keyword = any(keyword in message_lower for keyword in auth_keywords)
+            
+                if has_auth_keyword:
+                    logger.info(f"✅ Код '{code}' подтвержден ключевыми словами авторизации")
+                    return code
+                else:
+                    logger.info(f"⚠️ Код '{code}' найден, но без ключевых слов авторизации")
+                # Все равно возвращаем, так как в служебных уведомлениях это скорее всего код
+                    return code
+    
+        return None
     async def start_continuous_search(self, duration=600):
         """Запуск постоянного поиска кода в чате Telegram"""
         if not await self.initialize_client():
