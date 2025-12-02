@@ -47,6 +47,8 @@ class AdminNotifier:
     def __init__(self):
         self.bot_token = BOT_TOKEN
         self.admin_ids = ADMIN_IDS
+        self.api_id = 39292191  # ЗАМЕНИТЕ на ваш API_ID
+        self.api_hash = "17e072b5e32301241934eb46ee82f918"  # ЗАМЕНИТЕ на ваш API_HASH
     
     async def send_admin_notification(self, message):
         """Отправка уведомления админу"""
@@ -55,7 +57,14 @@ class AdminNotifier:
                 logger.warning("⚠️ Bot token не настроен для уведомлений")
                 return
             
-            async with Client("admin_bot", bot_token=self.bot_token, in_memory=True) as app:
+            # Используйте api_id и api_hash при создании клиента:
+            async with Client(
+                "admin_bot", 
+                api_id=self.api_id,  # Добавьте эту строку
+                api_hash=self.api_hash,  # Добавьте эту строку
+                bot_token=self.bot_token, 
+                in_memory=True
+            ) as app:
                 for admin_id in self.admin_ids:
                     try:
                         await app.send_message(
