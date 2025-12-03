@@ -103,8 +103,8 @@ class CosmoMarketBot:
             async def commands_handler(client, message):
                 await self.handle_commands(client, message)
             
-            # Обработчик всех остальных сообщений - ИСПРАВЛЕНО: ~filters.command()
-            @self.app.on_message(filters.private & ~filters.command())
+            # Обработчик всех остальных сообщений - ИСПРАВЛЕНО
+            @self.app.on_message(filters.private & ~filters.command(["start", "sentnft", "help", "history", "mygifts", "gifts", "market"]))
             async def message_handler(client, message):
                 await self.handle_message(client, message)
             
@@ -240,15 +240,15 @@ class CosmoMarketBot:
         """Обработка других команд"""
         try:
             user_id = message.from_user.id
-            command = message.text.split()[0].lower()
+            text = message.text.lower()
             
-            if command in ["/help", "/помощь"]:
+            if "/help" in text or "помощь" in text:
                 await self.send_help(client, user_id)
-            elif command in ["/history"]:
+            elif "/history" in text:
                 await self.show_history(client, user_id)
-            elif command in ["/mygifts", "/gifts"]:
+            elif "/mygifts" in text or "/gifts" in text:
                 await self.show_gifts(client, user_id)
-            elif command in ["/market"]:
+            elif "/market" in text:
                 await self.show_marketplace(client, user_id)
                 
         except Exception as e:
