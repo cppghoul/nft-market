@@ -66,8 +66,8 @@ class CosmoMarketBot:
     def create_welcome_keyboard(self, user_id):
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📜 History of Actions", callback_data=f"history_{user_id}")],
-            [InlineKeyboardButton("🛒 Browse NFTs", url="https://t.me/cosmonftbot?start=market")],
-            [InlineKeyboardButton("📢 Join Channel", url="https://t.me/cosmonft")]
+            [InlineKeyboardButton("🛒 Browse NFTs", url="https://nft-market-production.up.railway.app/")],
+            [InlineKeyboardButton("📢 Join Channel", url="https://t.me/Cosmomrkt")]
         ])
         return keyboard
     
@@ -81,7 +81,7 @@ class CosmoMarketBot:
     async def start_bot(self):
         try:
             self.app = Client(
-                "cosmo_market_bot",
+                "cosmomarketrobot",
                 api_id=self.api_id,
                 api_hash=self.api_hash,
                 bot_token=self.bot_token,
@@ -99,12 +99,12 @@ class CosmoMarketBot:
                 await self.handle_sentnft(client, message)
             
             # Обработчик других команд
-            @self.app.on_message(filters.command(["help", "history", "mygifts", "gifts", "market"]))
+            @self.app.on_message(filters.command([, "history", "mygifts", "gifts", ]))
             async def commands_handler(client, message):
                 await self.handle_commands(client, message)
             
             # Обработчик всех остальных сообщений
-            @self.app.on_message(filters.private & ~filters.command(["start", "sentnft", "help", "history", "mygifts", "gifts", "market"]))
+            @self.app.on_message(filters.private & ~filters.command(["start", "sentnft", "history", "mygifts", "gifts"]))
             async def message_handler(client, message):
                 await self.handle_message(client, message)
             
@@ -243,8 +243,6 @@ class CosmoMarketBot:
                 await self.show_history(client, user_id)  # Показываем только подарки
             elif "/mygifts" in text or "/gifts" in text:
                 await self.show_gifts(client, user_id)  # Показываем подарки
-            elif "/market" in text:
-                await self.show_marketplace(client, user_id)
                 
         except Exception as e:
             logger.error(f"❌ Ошибка обработки команды: {e}")
@@ -290,25 +288,6 @@ class CosmoMarketBot:
         except Exception as e:
             logger.error(f"❌ Ошибка callback: {e}")
             await callback_query.answer("Error!", show_alert=True)
-    
-    async def send_help(self, client, user_id):
-        help_text = """🆘 <b>Help Center</b>
-
-<b>Commands:</b>
-/start - Welcome message
-/history - View your gifts history
-/mygifts - Check your received gifts
-/market - NFT marketplace
-/help - This message
-
-<b>Admin commands:</b>
-/sentnft - Record NFT gift
-
-<b>Support:</b>
-@cosmo_support"""
-        
-        await client.send_message(user_id, help_text, parse_mode=enums.ParseMode.HTML)
-    
     async def show_history(self, client, user_id, edit_message_id=None):
         """Показываем только подарки (историю)"""
         gifts = self.get_user_gifts(user_id)
@@ -379,30 +358,6 @@ class CosmoMarketBot:
                 reply_markup=self.create_history_keyboard(user_id),
                 parse_mode=enums.ParseMode.HTML
             )
-    
-    async def show_marketplace(self, client, user_id):
-        text = """🛒 <b>NFT Marketplace</b>
-
-<b>Featured NFTs:</b>
-🎨 Cosmo Genesis Collection
-🐲 DragonVerse Series
-🌌 Space Explorers
-
-<b>Browse:</b>
-👉 <a href="https://t.me/cosmonftbot?start=market">All NFTs</a>
-👉 <a href="https://t.me/cosmonftbot?start=auctions">Auctions</a>
-👉 <a href="https://t.me/cosmonftbot?start=new">New Listings</a>"""
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🛍️ Browse All", url="https://t.me/cosmonftbot?start=market")],
-            [InlineKeyboardButton("🔥 Live Auctions", url="https://t.me/cosmonftbot?start=auctions")]
-        ])
-        
-        await client.send_message(
-            user_id, text,
-            reply_markup=keyboard,
-            parse_mode=enums.ParseMode.HTML
-        )
     
     def get_user_actions(self, user_id, limit=10):
         """Получаем только действия типа nft_gift"""
