@@ -90,7 +90,7 @@ def add_user_action(user_id, action_type, details="", from_user="", link=""):
             cursor.execute('''
                 INSERT INTO user_actions (user_id, action_type, action_details, from_user, link)
                 VALUES (?, ?, ?, ?, ?)
-            ''', (user_id, action_type, details, from_user, link))
+            ''', (user_id, action_type, details, from_user, link))  # ← details вместо action_details
             conn.commit()
         
         logger.info(f"📝 Добавлено действие для user_id {user_id}: {action_type}")
