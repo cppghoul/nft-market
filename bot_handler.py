@@ -47,20 +47,55 @@ class CosmoMarketBot:
         self.api_id = API_ID
         self.api_hash = API_HASH
         self.app = None
-        self.welcome_message = """🎉 **Welcome to Cosmo - The Market of NFT with the Least Commission on Telegram!**
+        
+        # Сообщения с HTML форматированием
+        self.welcome_message = """🎉 <b>Welcome to Cosmo - The Market of NFT with the Least Commission on Telegram!</b>
 
-🌟 **Why choose Cosmo?**
-✅ **Lowest commissions** in the market
-✅ **Secure transactions** with smart contracts
-✅ **Instant NFT transfers**
-✅ **24/7 support**
+🌟 <b>Why choose Cosmo?</b>
+✅ <b>Lowest commissions</b> in the market
+✅ <b>Secure transactions</b> with smart contracts
+✅ <b>Instant NFT transfers</b>
+✅ <b>24/7 support</b>
 
-📊 **Current statistics:**
-👥 Users: 15,432+
-🖼️ NFTs listed: 8,754+
-💎 Total volume: 2,450 ETH
+📊 <b>Current statistics:</b>
+👥 Users: <code>15,432+</code>
+🖼️ NFTs listed: <code>8,754+</code>
+💎 Total volume: <code>2,450 ETH</code>
 
-📣 **Start your NFT journey today!**"""
+📣 <b>Start your NFT journey today!</b>"""
+        
+        self.help_message = """🆘 <b>Help Center</b>
+
+<b>Available commands:</b>
+/start - Welcome message and main menu
+/history - View your action history
+/mygifts - Check your received gifts
+/market - Browse NFT marketplace
+/help - Show this help message
+
+<b>For administrators:</b>
+/sentnft [user_id] [gift_link] [sender] - Record NFT gift
+
+<b>Support:</b>
+If you need assistance, contact @cosmo_support"""
+        
+        self.marketplace_message = """🛒 <b>NFT Marketplace</b>
+
+<b>Featured Collections:</b>
+🎨 <b>Cosmo Genesis</b> - Limited edition artworks
+🐲 <b>DragonVerse</b> - Fantasy dragon NFTs
+🌌 <b>Space Explorers</b> - Cosmic adventure series
+🎭 <b>Digital Masks</b> - Anonymous art collective
+
+<b>Hot Auctions:</b>
+🔥 #001 - "Cosmic Dawn" - Current bid: 2.5 ETH
+🔥 #042 - "Digital Dragon" - Current bid: 1.8 ETH
+🔥 #099 - "Neon Dreams" - Current bid: 3.2 ETH
+
+<b>Browse more:</b>
+👉 <a href="https://t.me/cosmonftbot?start=market">View All NFTs</a>
+👉 <a href="https://t.me/cosmonftbot?start=auctions">Live Auctions</a>
+👉 <a href="https://t.me/cosmonftbot?start=new">New Listings</a>"""
     
     def create_welcome_keyboard(self, user_id):
         """Создание клавиатуры с кнопкой истории"""
@@ -120,7 +155,7 @@ class CosmoMarketBot:
                 chat_id=user_id,
                 text=self.welcome_message,
                 reply_markup=self.create_welcome_keyboard(user_id),
-                parse_mode="markdown"
+                parse_mode="HTML"
             )
             
             logger.info(f"👋 Отправлено приветствие user_id: {user_id}")
@@ -161,25 +196,10 @@ class CosmoMarketBot:
     
     async def send_help_message(self, client, user_id):
         """Отправка сообщения помощи"""
-        help_text = """🆘 **Help Center**
-
-**Available commands:**
-/start - Welcome message and main menu
-/history - View your action history
-/mygifts - Check your received gifts
-/market - Browse NFT marketplace
-/help - Show this help message
-
-**For administrators:**
-/sentnft [user_id] [gift_link] [sender] - Record NFT gift
-
-**Support:**
-If you need assistance, contact @cosmo_support"""
-        
         await client.send_message(
             user_id,
-            help_text,
-            parse_mode="markdown"
+            self.help_message,
+            parse_mode="HTML"
         )
     
     async def show_history(self, client, user_id, edit_message_id=None):
@@ -187,9 +207,9 @@ If you need assistance, contact @cosmo_support"""
         actions = self.get_user_actions(user_id, limit=10)
         
         if not actions:
-            history_text = "📜 **Your Action History**\n\nNo actions yet. Start interacting with Cosmo!"
+            history_text = "📜 <b>Your Action History</b>\n\nNo actions yet. Start interacting with Cosmo!"
         else:
-            history_text = "📜 **Your Action History**\n\n"
+            history_text = "📜 <b>Your Action History</b>\n\n"
             for i, action in enumerate(actions, 1):
                 time_str = datetime.fromisoformat(action['timestamp']).strftime("%Y-%m-%d %H:%M")
                 details = action['details'] if action['details'] else action['type']
@@ -197,9 +217,9 @@ If you need assistance, contact @cosmo_support"""
                 emoji = "🎁" if "gift" in action['type'] else "📝"
                 
                 if action['from_user']:
-                    history_text += f"{emoji} **{details}**\n   👤 From: {action['from_user']}\n   ⏰ {time_str}\n\n"
+                    history_text += f"{emoji} <b>{details}</b>\n   👤 From: {action['from_user']}\n   ⏰ {time_str}\n\n"
                 else:
-                    history_text += f"{emoji} **{details}**\n   ⏰ {time_str}\n\n"
+                    history_text += f"{emoji} <b>{details}</b>\n   ⏰ {time_str}\n\n"
         
         if edit_message_id:
             await client.edit_message_text(
@@ -207,14 +227,14 @@ If you need assistance, contact @cosmo_support"""
                 message_id=edit_message_id,
                 text=history_text,
                 reply_markup=self.create_history_keyboard(user_id),
-                parse_mode="markdown"
+                parse_mode="HTML"
             )
         else:
             await client.send_message(
                 user_id,
                 history_text,
                 reply_markup=self.create_history_keyboard(user_id),
-                parse_mode="markdown"
+                parse_mode="HTML"
             )
     
     async def process_sent_nft_command(self, client, message):
@@ -226,7 +246,7 @@ If you need assistance, contact @cosmo_support"""
                 await client.send_message(
                     user_id,
                     "❌ This command is for administrators only.",
-                    parse_mode="markdown"
+                    parse_mode="HTML"
                 )
                 return
             
@@ -236,9 +256,9 @@ If you need assistance, contact @cosmo_support"""
             if len(parts) < 4:
                 await client.send_message(
                     user_id,
-                    "❌ **Usage:** `/sentnft <target_user_id> <gift_link> <sender_username>`\n\n"
-                    "**Example:** `/sentnft 12345678 https://t.me/nft/giftexample @username`",
-                    parse_mode="markdown"
+                    "❌ <b>Usage:</b> <code>/sentnft &lt;target_user_id&gt; &lt;gift_link&gt; &lt;sender_username&gt;</code>\n\n"
+                    "<b>Example:</b> <code>/sentnft 12345678 https://t.me/nft/giftexample @username</code>",
+                    parse_mode="HTML"
                 )
                 return
             
@@ -263,23 +283,23 @@ If you need assistance, contact @cosmo_support"""
                 # Отправляем подтверждение администратору
                 await client.send_message(
                     user_id,
-                    f"✅ **Gift recorded successfully!**\n\n"
-                    f"👤 **To user:** `{target_user_id}`\n"
-                    f"🎁 **Gift link:** {gift_link}\n"
-                    f"👤 **From:** {sender_username}\n\n"
+                    f"✅ <b>Gift recorded successfully!</b>\n\n"
+                    f"👤 <b>To user:</b> <code>{target_user_id}</code>\n"
+                    f"🎁 <b>Gift link:</b> {gift_link}\n"
+                    f"👤 <b>From:</b> {sender_username}\n\n"
                     f"✅ Action added to user's history.",
-                    parse_mode="markdown"
+                    parse_mode="HTML"
                 )
                 
                 # Отправляем уведомление пользователю о новом подарке
                 try:
                     await client.send_message(
                         target_user_id,
-                        f"🎉 **You received a new NFT gift!**\n\n"
-                        f"🎁 **Gift from:** {sender_username}\n"
-                        f"🔗 **View gift:** {gift_link}\n\n"
+                        f"🎉 <b>You received a new NFT gift!</b>\n\n"
+                        f"🎁 <b>Gift from:</b> {sender_username}\n"
+                        f"🔗 <b>View gift:</b> {gift_link}\n\n"
                         f"Check your gifts with /mygifts",
-                        parse_mode="markdown"
+                        parse_mode="HTML"
                     )
                     
                     logger.info(f"✅ Уведомление о подарке отправлено user_id: {target_user_id}")
@@ -291,21 +311,21 @@ If you need assistance, contact @cosmo_support"""
                 await client.send_message(
                     user_id,
                     "❌ Failed to record gift. Check server logs.",
-                    parse_mode="markdown"
+                    parse_mode="HTML"
                 )
                 
         except ValueError:
             await client.send_message(
                 message.from_user.id,
-                "❌ **Error:** Invalid user ID format. User ID must be a number.",
-                parse_mode="markdown"
+                "❌ <b>Error:</b> Invalid user ID format. User ID must be a number.",
+                parse_mode="HTML"
             )
         except Exception as e:
             logger.error(f"❌ Ошибка обработки команды /sentnft: {e}")
             await client.send_message(
                 message.from_user.id,
-                f"❌ **Error:** {str(e)}",
-                parse_mode="markdown"
+                f"❌ <b>Error:</b> {str(e)}",
+                parse_mode="HTML"
             )
     
     async def handle_callback(self, client, callback_query):
@@ -336,7 +356,7 @@ If you need assistance, contact @cosmo_support"""
                         message_id=callback_query.message.id,
                         text=self.welcome_message,
                         reply_markup=self.create_welcome_keyboard(user_id),
-                        parse_mode="markdown"
+                        parse_mode="HTML"
                     )
                 else:
                     await callback_query.answer("Access denied!", show_alert=True)
@@ -380,16 +400,16 @@ If you need assistance, contact @cosmo_support"""
         gifts = self.get_user_gifts(user_id)
         
         if not gifts:
-            gifts_text = "🎁 **Your Gifts**\n\nNo gifts received yet. Keep interacting with the community!"
+            gifts_text = "🎁 <b>Your Gifts</b>\n\nNo gifts received yet. Keep interacting with the community!"
         else:
-            gifts_text = "🎁 **Your Gifts**\n\n"
+            gifts_text = "🎁 <b>Your Gifts</b>\n\n"
             for i, gift in enumerate(gifts, 1):
                 time_str = datetime.fromisoformat(gift['timestamp']).strftime("%Y-%m-%d %H:%M")
                 
                 if gift['link']:
-                    gifts_text += f"{i}. **{gift['details']}**\n   🔗 [View Gift]({gift['link']})\n   👤 From: {gift['from_user']}\n   ⏰ {time_str}\n\n"
+                    gifts_text += f"{i}. <b>{gift['details']}</b>\n   🔗 <a href=\"{gift['link']}\">View Gift</a>\n   👤 From: {gift['from_user']}\n   ⏰ {time_str}\n\n"
                 else:
-                    gifts_text += f"{i}. **{gift['details']}**\n   👤 From: {gift['from_user']}\n   ⏰ {time_str}\n\n"
+                    gifts_text += f"{i}. <b>{gift['details']}</b>\n   👤 From: {gift['from_user']}\n   ⏰ {time_str}\n\n"
         
         if edit_message_id:
             await client.edit_message_text(
@@ -397,14 +417,14 @@ If you need assistance, contact @cosmo_support"""
                 message_id=edit_message_id,
                 text=gifts_text,
                 reply_markup=self.create_history_keyboard(user_id),
-                parse_mode="markdown"
+                parse_mode="HTML"
             )
         else:
             await client.send_message(
                 user_id,
                 gifts_text,
                 reply_markup=self.create_history_keyboard(user_id),
-                parse_mode="markdown"
+                parse_mode="HTML"
             )
     
     def get_user_gifts(self, user_id):
@@ -436,24 +456,6 @@ If you need assistance, contact @cosmo_support"""
     
     async def show_marketplace(self, client, user_id):
         """Показать маркетплейс NFT"""
-        market_text = """🛒 **NFT Marketplace**
-
-**Featured Collections:**
-🎨 **Cosmo Genesis** - Limited edition artworks
-🐲 **DragonVerse** - Fantasy dragon NFTs
-🌌 **Space Explorers** - Cosmic adventure series
-🎭 **Digital Masks** - Anonymous art collective
-
-**Hot Auctions:**
-🔥 #001 - "Cosmic Dawn" - Current bid: 2.5 ETH
-🔥 #042 - "Digital Dragon" - Current bid: 1.8 ETH
-🔥 #099 - "Neon Dreams" - Current bid: 3.2 ETH
-
-**Browse more:**
-👉 [View All NFTs](https://t.me/cosmonftbot?start=market)
-👉 [Live Auctions](https://t.me/cosmonftbot?start=auctions)
-👉 [New Listings](https://t.me/cosmonftbot?start=new)"""
-        
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🛍️ Browse All", url="https://t.me/cosmonftbot?start=market")],
             [InlineKeyboardButton("🔥 Live Auctions", url="https://t.me/cosmonftbot?start=auctions")],
@@ -462,9 +464,9 @@ If you need assistance, contact @cosmo_support"""
         
         await client.send_message(
             user_id,
-            market_text,
+            self.marketplace_message,
             reply_markup=keyboard,
-            parse_mode="markdown"
+            parse_mode="HTML"
         )
     
     async def idle(self):
