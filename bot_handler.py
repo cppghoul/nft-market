@@ -57,16 +57,14 @@ class CosmoMarketBot:
 ✅ <b>24/7 support</b>
 
 📊 <b>Current statistics:</b>
-👥 Users: <code>15,432+</code>
 🖼️ NFTs listed: <code>8,754+</code>
-💎 Total volume: <code>2,450 ETH</code>
 
 📣 <b>Start your NFT journey today!</b>"""
     
     def create_welcome_keyboard(self, user_id):
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📜 History of Actions", callback_data=f"history_{user_id}")],
-            [InlineKeyboardButton("🛒 Browse NFTs", url="https://nft-market-production.up.railway.app/")],
+            [InlineKeyboardButton("🛒 Browse NFTs", web_app=WebAppInfo(url="https://nft-market-production.up.railway.app/"))],
             [InlineKeyboardButton("📢 Join Channel", url="https://t.me/Cosmomrkt")]
         ])
         return keyboard
