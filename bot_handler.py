@@ -143,7 +143,7 @@ If you need assistance, contact @cosmo_support"""
                 await self.app.stop()
     
     async def handle_message(self, client, message):
-    """Обработка входящих сообщений"""
+        """Обработка входящих сообщений"""
         try:
             user_id = message.from_user.id
             user_name = message.from_user.username or message.from_user.first_name
