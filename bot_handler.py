@@ -99,7 +99,7 @@ class CosmoMarketBot:
                 await self.handle_sentnft(client, message)
             
             # Обработчик других команд
-            @self.app.on_message(filters.command([, "history", "mygifts", "gifts", ]))
+            @self.app.on_message(filters.command(["history", "mygifts", "gifts"]))
             async def commands_handler(client, message):
                 await self.handle_commands(client, message)
             
