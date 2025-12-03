@@ -103,8 +103,8 @@ class CosmoMarketBot:
             async def commands_handler(client, message):
                 await self.handle_commands(client, message)
             
-            # Обработчик всех остальных сообщений
-            @self.app.on_message(filters.private & ~filters.command)
+            # Обработчик всех остальных сообщений - ИСПРАВЛЕНО: ~filters.command()
+            @self.app.on_message(filters.private & ~filters.command())
             async def message_handler(client, message):
                 await self.handle_message(client, message)
             
@@ -183,7 +183,7 @@ class CosmoMarketBot:
             success = add_user_action(
                 user_id=target_user_id,
                 action_type="nft_gift",
-                details="Получен подарок NFT",  # ← details, не action_details
+                details="Получен подарок NFT",
                 from_user=sender_username,
                 link=gift_link
             )
