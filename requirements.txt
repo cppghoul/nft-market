@@ -3,3 +3,4 @@ python-dotenv==1.0.0
 pyrogram==2.0.106
 tgcrypto==1.2.5
 psycopg2-binary==2.9.7
+supervisor==4.2.5
