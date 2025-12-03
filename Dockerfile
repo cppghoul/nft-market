@@ -6,18 +6,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем весь проект включая .env
+# Копируем весь проект
 COPY . .
 
 EXPOSE 8080
 
-# Установка supervisor для управления процессами
-RUN apk add --no-cache supervisor
+# Health check (опционально)
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
 
-# Создаем директории для supervisor
-RUN mkdir -p /etc/supervisor.d /var/log/supervisor
-
-# Конфигурация supervisor
-COPY supervisord.conf /etc/supervisor.d/supervisord.ini
-
-CMD ["supervisord", "-c", "/etc/supervisor.d/supervisord.ini"]
+# Railway автоматически найдет Procfile, но можно указать команду
+CMD ["python", "app.py"]
