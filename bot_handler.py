@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from pyrogram import Client, filters, enums
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 import sqlite3
 from datetime import datetime
 from contextlib import contextmanager
