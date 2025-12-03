@@ -1598,7 +1598,32 @@ def get_gifts(user_id):
     except Exception as e:
         logger.error(f"❌ Ошибка получения подарков: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+def start_telegram_bot():
+    """Запуск Telegram бота в фоновом потоке (Railway-совместимый)"""
+    try:
+        import threading
+        import subprocess
+        import sys
+        
+        def run_bot():
+            """Запуск бота как отдельного процесса"""
+            try:
+                logger.info("🤖 Запуск Telegram бота...")
+                # Запускаем бот как отдельный процесс
+                subprocess.run([sys.executable, "bot_handler.py"])
+            except Exception as e:
+                logger.error(f"❌ Ошибка в процессе бота: {e}")
+        
+        # Запускаем в отдельном потоке
+        bot_thread = threading.Thread(target=run_bot, daemon=True)
+        bot_thread.start()
+        logger.info("✅ Telegram бот запущен в фоновом режиме")
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка запуска бота: {e}")
 
+# Запускаем бота при старте приложения
+start_telegram_bot()
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
     host = '0.0.0.0'
