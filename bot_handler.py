@@ -143,35 +143,53 @@ If you need assistance, contact @cosmo_support"""
                 await self.app.stop()
     
     async def handle_message(self, client, message):
-        """Обработка входящих сообщений"""
+    """Обработка входящих сообщений"""
         try:
             user_id = message.from_user.id
             user_name = message.from_user.username or message.from_user.first_name
-            
+        
             logger.info(f"📨 Сообщение от user_id: {user_id}, текст: {message.text}")
+        
+        # Проверяем если это команда /sentnft
+            if message.text and message.text.startswith('/sentnft'):
+                await self.process_sent_nft_command(client, message)
+                return
             
+        # Проверяем если это команда /start
+            if message.text and '/start' in message.text.lower():
             # Отправляем приветственное сообщение
-            await client.send_message(
+                await client.send_message(
                 chat_id=user_id,
                 text=self.welcome_message,
                 reply_markup=self.create_welcome_keyboard(user_id),
                 parse_mode=enums.ParseMode.HTML
             )
             
-            logger.info(f"👋 Отправлено приветствие user_id: {user_id}")
+                logger.info(f"👋 Отправлено приветствие user_id: {user_id}")
             
             # Добавляем действие "received_welcome" в историю
-            add_user_action(
+                add_user_action(
                 user_id=user_id,
                 action_type="received_welcome",
-                action_details="Получено приветственное сообщение от бота",
+                details="Получено приветственное сообщение от бота",
                 from_user="@cosmo_bot"
             )
+                return
             
-            # Обрабатываем команды
+        # Для остальных сообщений тоже отправляем приветствие
+            await client.send_message(
+            chat_id=user_id,
+            text=self.welcome_message,
+            reply_markup=self.create_welcome_keyboard(user_id),
+            parse_mode=enums.ParseMode.HTML
+        )
+        
+            logger.info(f"👋 Отправлено приветствие на обычное сообщение user_id: {user_id}")
+        
+        # Обрабатываем другие команды если есть текст
             if message.text:
                 await self.process_commands(client, message)
-                
+            
         except Exception as e:
             logger.error(f"❌ Ошибка обработки сообщения: {e}")
     
