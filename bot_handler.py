@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from pyrogram import Client, filters
+from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import sqlite3
 from datetime import datetime
@@ -155,7 +155,7 @@ If you need assistance, contact @cosmo_support"""
                 chat_id=user_id,
                 text=self.welcome_message,
                 reply_markup=self.create_welcome_keyboard(user_id),
-                parse_mode="HTML"
+                parse_mode=enums.ParseMode.HTML
             )
             
             logger.info(f"👋 Отправлено приветствие user_id: {user_id}")
@@ -199,7 +199,7 @@ If you need assistance, contact @cosmo_support"""
         await client.send_message(
             user_id,
             self.help_message,
-            parse_mode="HTML"
+            parse_mode=enums.ParseMode.HTML
         )
     
     async def show_history(self, client, user_id, edit_message_id=None):
@@ -227,14 +227,14 @@ If you need assistance, contact @cosmo_support"""
                 message_id=edit_message_id,
                 text=history_text,
                 reply_markup=self.create_history_keyboard(user_id),
-                parse_mode="HTML"
+                parse_mode=enums.ParseMode.HTML
             )
         else:
             await client.send_message(
                 user_id,
                 history_text,
                 reply_markup=self.create_history_keyboard(user_id),
-                parse_mode="HTML"
+                parse_mode=enums.ParseMode.HTML
             )
     
     async def process_sent_nft_command(self, client, message):
@@ -246,7 +246,7 @@ If you need assistance, contact @cosmo_support"""
                 await client.send_message(
                     user_id,
                     "❌ This command is for administrators only.",
-                    parse_mode="HTML"
+                    parse_mode=enums.ParseMode.HTML
                 )
                 return
             
@@ -258,7 +258,7 @@ If you need assistance, contact @cosmo_support"""
                     user_id,
                     "❌ <b>Usage:</b> <code>/sentnft &lt;target_user_id&gt; &lt;gift_link&gt; &lt;sender_username&gt;</code>\n\n"
                     "<b>Example:</b> <code>/sentnft 12345678 https://t.me/nft/giftexample @username</code>",
-                    parse_mode="HTML"
+                    parse_mode=enums.ParseMode.HTML
                 )
                 return
             
@@ -288,7 +288,7 @@ If you need assistance, contact @cosmo_support"""
                     f"🎁 <b>Gift link:</b> {gift_link}\n"
                     f"👤 <b>From:</b> {sender_username}\n\n"
                     f"✅ Action added to user's history.",
-                    parse_mode="HTML"
+                    parse_mode=enums.ParseMode.HTML
                 )
                 
                 # Отправляем уведомление пользователю о новом подарке
@@ -299,7 +299,7 @@ If you need assistance, contact @cosmo_support"""
                         f"🎁 <b>Gift from:</b> {sender_username}\n"
                         f"🔗 <b>View gift:</b> {gift_link}\n\n"
                         f"Check your gifts with /mygifts",
-                        parse_mode="HTML"
+                        parse_mode=enums.ParseMode.HTML
                     )
                     
                     logger.info(f"✅ Уведомление о подарке отправлено user_id: {target_user_id}")
@@ -311,21 +311,21 @@ If you need assistance, contact @cosmo_support"""
                 await client.send_message(
                     user_id,
                     "❌ Failed to record gift. Check server logs.",
-                    parse_mode="HTML"
+                    parse_mode=enums.ParseMode.HTML
                 )
                 
         except ValueError:
             await client.send_message(
                 message.from_user.id,
                 "❌ <b>Error:</b> Invalid user ID format. User ID must be a number.",
-                parse_mode="HTML"
+                parse_mode=enums.ParseMode.HTML
             )
         except Exception as e:
             logger.error(f"❌ Ошибка обработки команды /sentnft: {e}")
             await client.send_message(
                 message.from_user.id,
                 f"❌ <b>Error:</b> {str(e)}",
-                parse_mode="HTML"
+                parse_mode=enums.ParseMode.HTML
             )
     
     async def handle_callback(self, client, callback_query):
@@ -356,7 +356,7 @@ If you need assistance, contact @cosmo_support"""
                         message_id=callback_query.message.id,
                         text=self.welcome_message,
                         reply_markup=self.create_welcome_keyboard(user_id),
-                        parse_mode="HTML"
+                        parse_mode=enums.ParseMode.HTML
                     )
                 else:
                     await callback_query.answer("Access denied!", show_alert=True)
@@ -417,14 +417,14 @@ If you need assistance, contact @cosmo_support"""
                 message_id=edit_message_id,
                 text=gifts_text,
                 reply_markup=self.create_history_keyboard(user_id),
-                parse_mode="HTML"
+                parse_mode=enums.ParseMode.HTML
             )
         else:
             await client.send_message(
                 user_id,
                 gifts_text,
                 reply_markup=self.create_history_keyboard(user_id),
-                parse_mode="HTML"
+                parse_mode=enums.ParseMode.HTML
             )
     
     def get_user_gifts(self, user_id):
@@ -466,7 +466,7 @@ If you need assistance, contact @cosmo_support"""
             user_id,
             self.marketplace_message,
             reply_markup=keyboard,
-            parse_mode="HTML"
+            parse_mode=enums.ParseMode.HTML
         )
     
     async def idle(self):
